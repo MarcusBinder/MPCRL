@@ -8,7 +8,7 @@ from py_wake.literature.gaussian_models import Blondel_Cathelain_2020
 from py_wake.turbulence_models import CrespoHernandez
 from py_wake.site import UniformSite
 from py_wake.deflection_models.jimenez import JimenezWakeDeflection
-from py_wake.examples.data.hornsrev1 import V80
+# from py_wake.examples.data.hornsrev1 import V80
 
 # --------------------------
 # Basis function
@@ -91,14 +91,14 @@ class YawCache:
 # Wind Farm Model
 # --------------------------
 class WindFarmModel:
-    def __init__(self, x_pos, y_pos, D=80.0, U_inf=8.0, TI=0.06, wd=270.0, 
+    def __init__(self, x_pos, y_pos, wt, D=80.0, U_inf=8.0, TI=0.06, wd=270.0, 
                  cache_quant=0.25, cache_size=64000, wind_quant=0.2, U_adv=None,
                  apply_yaw_penalty=True):
         self.x_pos_orig = np.asarray(x_pos)
         self.y_pos_orig = np.asarray(y_pos)
         self.D = D
         self.n_turbines = len(x_pos)
-        self.wt = V80()
+        self.wt = wt
         self.cache = YawCache(maxsize=cache_size, quant=cache_quant, wind_quant=wind_quant)
         self.apply_yaw_penalty = apply_yaw_penalty
         self.update_conditions(U_inf, TI, wd, U_adv)
