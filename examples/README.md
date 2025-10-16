@@ -1,28 +1,31 @@
-# Examples
+# MPCRL Examples
 
-This directory contains Jupyter notebooks demonstrating how to use the MPCRL package.
+This directory contains example Jupyter notebooks demonstrating the use of the MPCRL package.
 
 ## Notebooks
 
-1. **01_environment_setup.ipynb** - Environment setup and basic usage
-   - Shows how to create an MPCenv environment
-   - Demonstrates basic configuration options
-   - Runs simple episodes with random actions
+### 01_environment_setup.ipynb
+**Main RL Training Script**
 
-2. **02_basic_usage.ipynb** - Basic MPC usage examples
-   - Simple wind farm setups
-   - Basic optimization examples
-   - Visualization of results
+This notebook demonstrates the complete reinforcement learning training loop for wind farm control:
+- Environment initialization with turbulence models
+- MPC-based control strategy
+- Real-time parameter estimation (wind direction, wind speed, turbulence intensity)
+- Power optimization and yaw control
+- Visualization of results including power output, yaw angles, and estimated vs true wind conditions
 
-3. **03_training_loop.ipynb** - Training loop examples
-   - Full RL training loop implementation
-   - Reward tracking and analysis
-   - Performance evaluation
+### 02_basic_usage.ipynb
+Basic usage examples and getting started guide.
 
-4. **04_full_examples.ipynb** - Comprehensive examples
-   - Advanced usage patterns
-   - Integration with different RL algorithms
-   - Performance optimization tips
+### 03_training_loop.ipynb
+Detailed training loop implementations and configurations.
+
+### 04_full_examples.ipynb
+Complete end-to-end examples with various scenarios.
+
+## Running the Examples
+
+Make sure you have the MPCRL package installed and all dependencies available. Each notebook is self-contained and can be run independently.
 
 ## Running the Notebooks
 
