@@ -12,14 +12,12 @@ from matplotlib.gridspec import GridSpec
 import sys
 import os
 
-# Add the directory containing the main code to path
-# Adjust this path based on your file structure
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+# Add the parent directory to path to allow imports from mpcrl package
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Import all functions and classes from the main module
-# Replace 'main_module' with your actual module name
-from MPC import (
-    sat01, psi, yaw_traj, YawCache, WindFarmModel, 
+# Import all functions and classes from the mpcrl package
+from mpcrl import (
+    sat01, psi, yaw_traj, YawCache, WindFarmModel,
     run_farm_delay_loop_optimized, farm_energy, optimize_farm_back2front
 )
 

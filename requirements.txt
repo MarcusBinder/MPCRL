@@ -1,0 +1,21 @@
+# Core dependencies
+numpy>=1.20.0
+scipy>=1.7.0
+matplotlib>=3.3.0
+
+# Wind farm simulation
+py_wake>=2.0.0
+
+# Reinforcement learning
+gymnasium>=0.26.0
+
+# Wind farm RL environment (if available via pip)
+# windgym  # May need to be installed separately or from source
+
+# Optional: For notebook support
+jupyter>=1.0.0
+ipywidgets>=7.6.0
+
+# Optional: For testing
+pytest>=7.0.0
+pytest-cov>=3.0.0

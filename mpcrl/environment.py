@@ -1,8 +1,8 @@
 from WindGym import WindFarmEnv
-from utils import make_config
+from .config import make_config
 from typing import Any, Dict, Optional, Union
 import gymnasium as gym
-from MPC import WindFarmModel, optimize_farm_back2front, run_farm_delay_loop_optimized
+from .mpc import WindFarmModel, optimize_farm_back2front, run_farm_delay_loop_optimized
 import numpy as np
 
 
