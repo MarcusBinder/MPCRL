@@ -11,15 +11,17 @@ class MPCenv(WindFarmEnv):
     Wind Farm Environment with MPC controller.
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self,
+                 **kwargs):
         super().__init__(**kwargs)
+        self.dt_mpc = self.dt_env  # The MPC time step is the same as the environment time step
 
     def reset(self, seed: Optional[int] = None, options: Optional[dict] = None):
         
         obs, info = super().reset(seed=seed, options=options)
 
         self.USE_VARIABLE_HORIZON = True   # Use variable prediction horizon (paper's approach)
-        self.USE_TIME_SHIFTED = True      # Use time-shifted cost function (paper's best)
+        self.USE_TIME_SHIFTED = True       # Use time-shifted cost function (paper's best)
         self.APPLY_YAW_PENALTY = True      # Use Equation 5 penalty for large yaw angles
 
         self.mpc_model = WindFarmModel(self.x_pos, self.y_pos, 
@@ -52,7 +54,7 @@ class MPCenv(WindFarmEnv):
         # Step 2: optimize the yaw angles
         optimized_params = optimize_farm_back2front(
             self.mpc_model, current_yaws_sorted, 
-            r_gamma=0.3, # yaw rate (deg/s)
+            r_gamma=self.yaw_step_sim/self.dt_sim, # yaw rate (deg/s)
             t_AH=100.0,  # action horizon (s)
             dt_opt=10.0,  # optimization time step (s)
             T_opt=500.0,  # prediction horizon (s)
@@ -64,12 +66,13 @@ class MPCenv(WindFarmEnv):
         self.previous_opt_params = optimized_params.copy()
 
 
-        dt_mpc = 60 # MPC control interval (s)
+        # Use the optimized parameters to run the delay model and get the next yaw angles
         t_action, trajectories, _ = run_farm_delay_loop_optimized(
             self.mpc_model, optimized_params, current_yaws_sorted, 
-            r_gamma=0.3, t_AH=100.0, dt=dt_mpc, T=dt_mpc
+            r_gamma=0.3, t_AH=100.0, dt=self.dt_sim, T=self.dt_mpc
         )
 
+        # The next yaw angles are the simply the last element of each trajectory
         next_yaws_sorted = np.array([traj[-1] for traj in trajectories])
         next_yaws_orig = next_yaws_sorted[self.mpc_model.unsorted_indices]
 

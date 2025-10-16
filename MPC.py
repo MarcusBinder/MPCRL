@@ -190,6 +190,13 @@ def run_farm_delay_loop_optimized(
 ) -> Tuple[np.ndarray, List[np.ndarray], np.ndarray]:
     """
     Optimized delay loop with caching and pre-allocation.
+    model: WindFarmModel instance
+    yaw_params: list of [o1, o2] for each turbine
+    current_yaw_angles_sorted: current yaw angles in sorted order
+    r_gamma: yaw rate (deg/s)
+    t_AH: action horizon (s)
+    dt: time step (s)
+    T: total simulation time (s)
     """
     n_turbines = model.n_turbines
     t = np.arange(0.0, T + 1e-9, dt)
