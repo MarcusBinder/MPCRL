@@ -85,3 +85,33 @@ target/
 .mypy_cache/
 .dmypy.json
 dmypy.json
+
+# ===== Project-Specific =====
+
+# Training outputs
+runs/
+wandb/
+*.pt
+*.pth
+*.ckpt
+checkpoints/
+
+# Large data files
+Boxes/
+*.mann_l*.nc
+*.h5
+*.hdf5
+
+# Results (keep CSV/figures but not intermediate files)
+results/data/*.pkl
+results/data/*.npy
+results/figures/*.tmp
+
+# Profiling results
+profile_results/
+
+# Temporary and backup files
+*.tmp
+*.bak
+tmp/
+temp/
