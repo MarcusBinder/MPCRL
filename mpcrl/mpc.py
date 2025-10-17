@@ -8,6 +8,8 @@ from py_wake.literature.gaussian_models import Blondel_Cathelain_2020
 from py_wake.turbulence_models import CrespoHernandez
 from py_wake.site import UniformSite
 from py_wake.deflection_models.jimenez import JimenezWakeDeflection
+from py_wake.superposition_models import SquaredSum
+from py_wake.superposition_models import MaxSum
 # from py_wake.examples.data.hornsrev1 import V80
 
 # --------------------------
@@ -105,12 +107,25 @@ class WindFarmModel:
 
     def update_conditions(self, U_inf, TI, wd, U_adv=None):
         """Update environmental conditions and rebuild necessary structures."""
+        # Apply minimum thresholds to prevent numerical issues in PyWake
+        # MIN_TI = 0.01  # Minimum turbulence intensity to prevent division by zero
+        # MIN_WS = 3.0   # Minimum wind speed for valid physics
+
         self.U_inf = U_inf
-        self.TI = TI
+        # self.TI = max(TI, MIN_TI)
         self.wd = wd
+        self.TI = TI
+
+        # # Warn if values were clamped
+        # if U_inf < MIN_WS:
+        #     print(f"Warning: Wind speed {U_inf:.3f} m/s below minimum {MIN_WS} m/s, clamped to {self.U_inf:.3f}")
+        # if TI < MIN_TI:
+        #     print(f"Warning: TI {TI:.5f} below minimum {MIN_TI}, clamped to {self.TI:.5f}")
         self.site = UniformSite(p_wd=[1.0], ti=self.TI)
         self.wfm = Blondel_Cathelain_2020(
             self.site, self.wt, 
+            superpositionModel=SquaredSum(),
+            # superpositionModel=MaxSum(),
             turbulenceModel=CrespoHernandez(), 
             deflectionModel=JimenezWakeDeflection()
         )
@@ -146,13 +161,32 @@ class WindFarmModel:
         if got is not None:
             powers = got
         else:
+            # try:
             sim_res = self.wfm(
                 x=self.xs, y=self.ys, h=self.hs, 
                 wd=[self.wd], ws=[self.U_inf], 
                 tilt=0, yaw=yaw_angles_sorted
             )
-            
+            # except Exception as e:
+            #     print(f"Simulation error: {e}")
+            #     print("The inputs were:")
+            #     print(f"  Yaw angles (sorted): {yaw_angles_sorted}")
+            #     print(f"  U_inf: {self.U_inf}, TI: {self.TI}, wd: {self.wd}")
+            #     # Return very low power as penalty instead of crashing
+            #     return np.zeros(self.n_turbines)
+
             powers = sim_res.Power.values.flatten()
+
+            # Check for NaN or Inf values and handle gracefully
+            # if np.any(np.isnan(powers)) or np.any(np.isinf(powers)):
+            #     print(f"Warning: NaN or Inf detected in power output!")
+            #     print(f"  Yaw angles (sorted): {yaw_angles_sorted}")
+            #     print(f"  U_inf: {self.U_inf}, TI: {self.TI}, wd: {self.wd}")
+            #     print(f"  Powers before fix: {powers}")
+                # Replace only NaN/Inf values with zero, keep valid values
+            powers = np.where(np.isnan(powers) | np.isinf(powers), 0.0, powers)
+                # print(f"  Powers after fix: {powers}")
+
             self.cache.put(tuple(yaw_angles_sorted), self.U_inf, self.TI, self.wd, powers)
         
         # Apply implicit yaw constraint (Equation 5 from paper) if enabled

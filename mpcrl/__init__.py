@@ -20,6 +20,7 @@ from .mpc import (
 )
 
 from .environment import MPCenv
+from .environment_fast import MPCenvFast
 
 from .config import make_config
 
@@ -35,6 +36,7 @@ __all__ = [
     "sat01",
     # Environment
     "MPCenv",
+    "MPCenvFast",
     # Configuration
     "make_config",
 ]

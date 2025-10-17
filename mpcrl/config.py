@@ -10,8 +10,8 @@ def make_config():
             "yaw_max": 45,
         },
         "wind": {
-            "ws_min": 8,
-            "ws_max": 10,
+            "ws_min": 10,
+            "ws_max": 12,
             "TI_min": 0.05,
             "TI_max": 0.05,
             "wd_min": 260,
