@@ -115,3 +115,5 @@ profile_results/
 *.bak
 tmp/
 temp/
+/c_generated_code
+*.txt
