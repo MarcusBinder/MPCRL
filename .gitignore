@@ -117,3 +117,15 @@ tmp/
 temp/
 /c_generated_code
 *.txt
+
+# Acados generated code
+c_generated_code/
+*.json
+!requirements.json
+
+# Log files
+*.log
+*_log_*.txt
+
+# Results (plots tracked individually if needed)
+results/plots/*.png

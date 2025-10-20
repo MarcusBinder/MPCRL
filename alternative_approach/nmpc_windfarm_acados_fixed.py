@@ -55,18 +55,19 @@ class Limits:
 @dataclass
 class MPCConfig:
     dt: float = 10.0
-    N_h: int = 20
-    lam_move: float = 0.5
-    trust_region_weight: float = 0.2
+    N_h: int = 10  # Short horizon for better linearization validity
+    lam_move: float = 10.0  # Moderate regularization (gets scaled by yaw_rate_max^2)
+    trust_region_weight: float = 1e4  # Large enough to ensure convexity with O(1e5) gradients
     trust_region_step: float = 5.0
     max_gradient_scale: float = float("inf")
-    max_quadratic_weight: float = 1e4
-    direction_bias: float = 0.0
+    max_quadratic_weight: float = 1e6
+    direction_bias: float = 5e4  # Break symmetry near zero yaw (added to gradient)
     initial_bias: float = 0.0
     target_weight: float = 0.0
     coarse_yaw_step: float = 5.0
     grad_clip: float | None = 5e4
     qp_solver: str = "PARTIAL_CONDENSING_HPIPM"
+    cost_scale: float = 1.0  # No cost scaling - rely on control normalization alone
 
 # ============================================================================
 # PyWake setup
@@ -159,11 +160,13 @@ def compute_delays(farm: Farm, wind: Wind, dt: float) -> Tuple[np.ndarray, np.nd
 # acados MPC with parameters (FIXED VERSION)
 # ============================================================================
 
-def create_acados_model_with_params(N_turbines: int, dt: float) -> AcadosModel:
+def create_acados_model_with_params(N_turbines: int, dt: float, yaw_rate_max: float) -> AcadosModel:
     """
     Create acados model with PARAMETERS for gradient vector.
 
     This allows us to update the cost gradient without rebuilding the solver.
+
+    NORMALIZED CONTROLS: u is now dimensionless in [-1, 1], scaled internally to physical rates.
     """
     model = AcadosModel()
     model.name = "wind_farm_yaw_param"
@@ -171,16 +174,17 @@ def create_acados_model_with_params(N_turbines: int, dt: float) -> AcadosModel:
     # States: yaw angles [deg]
     x = ca.SX.sym('x', N_turbines)
 
-    # Controls: yaw rates [deg/s]
+    # Controls: NORMALIZED yaw rates (dimensionless, will be scaled by yaw_rate_max)
     u = ca.SX.sym('u', N_turbines)
 
     # PARAMETERS: gradient vector (per turbine) and quadratic weights
     p = ca.SX.sym('p', 2 * N_turbines)
 
-    # Dynamics: simple integrator
-    x_next = x + u * dt
+    # Dynamics: simple integrator with NORMALIZED controls
+    # Physical yaw rate = u * yaw_rate_max [deg/s]
+    x_next = x + u * yaw_rate_max * dt
     model.f_expl_expr = x_next
-    model.f_impl_expr = x_next - (x + u * dt)
+    model.f_impl_expr = x_next - (x + u * yaw_rate_max * dt)
 
     model.x = x
     model.u = u
@@ -195,52 +199,62 @@ def setup_acados_ocp_with_params(farm: Farm, wind: Wind, limits: Limits, cfg: MP
     Set up acados OCP solver ONCE with parameterized cost.
 
     The gradient will be updated via parameters, not by rebuilding.
+
+    NORMALIZED CONTROLS: Control variable u is dimensionless [-1, 1], bounds and cost are adjusted.
     """
     ocp = AcadosOcp()
 
-    # Model with parameters
-    model = create_acados_model_with_params(N_turbines, cfg.dt)
+    # Model with parameters (NORMALIZED controls)
+    model = create_acados_model_with_params(N_turbines, cfg.dt, limits.yaw_rate_max)
     ocp.model = model
 
     # Dimensions
     ocp.dims.N = cfg.N_h
 
-    # Cost using parameters
+    # Cost using parameters (NORMALIZED CONTROLS)
+    # Note: u is now dimensionless [-1, 1], so cost terms need adjustment
     x = model.x
     u = model.u
     p = model.p
     N_t = N_turbines
-    grad_P = p[:N_t]
-    quad_weights = p[N_t:]
-    dt = cfg.dt
+    grad_P = p[:N_t]  # Will be PRE-SCALED in solve_step by yaw_rate_max * dt
+    quad_weights = p[N_t:]  # Will be PRE-SCALED in solve_step by (yaw_rate_max * dt)^2
+
+    # Scale lam_move to match normalized control units
+    # Since physical u_phys = u_norm * yaw_rate_max, the regularization becomes:
+    # lam_move * u_phys^2 = lam_move * (u_norm * yaw_rate_max)^2 = lam_move_scaled * u_norm^2
+    lam_move_scaled = cfg.lam_move * (limits.yaw_rate_max ** 2)
 
     ocp.cost.cost_type = 'EXTERNAL'
     ocp.cost.cost_type_e = 'EXTERNAL'
 
-    # Stage cost: linearized power improvement via yaw-rate command
+    # Stage cost: linearized power improvement via NORMALIZED yaw-rate command
+    # Since dynamics now include yaw_rate_max scaling, delta_x is already in degrees
+    # Gradient and quad_weights will be pre-scaled when set as parameters
+    # IMPORTANT: Apply overall cost scaling to make QP well-conditioned (cost should be O(1-100))
     reg = 1e-6 * (u.T @ u)
-    delta_x = u * dt
-    delta_sq = ca.power(delta_x, 2)
-    cost_expr = (
-        -grad_P.T @ delta_x
-        + 0.5 * quad_weights.T @ delta_sq
-        + (cfg.lam_move / 2) * (u.T @ u)
+    cost_expr_unscaled = (
+        -grad_P.T @ u         # grad_P is pre-scaled by yaw_rate_max * dt
+        + 0.5 * quad_weights.T @ ca.power(u, 2)  # quad_weights pre-scaled by (yaw_rate_max*dt)^2
+        + (lam_move_scaled / 2) * (u.T @ u)      # Scaled regularization
         + reg
     )
+    # Apply cost_scale to entire cost (doesn't change optimal solution, improves numerics)
+    cost_expr = cost_expr_unscaled * cfg.cost_scale
     ocp.model.cost_expr_ext_cost = cost_expr
 
-    # Terminal cost: only quadratic penalty towards stability
-    cost_expr_e = 1e-6 * (x.T @ x)
+    # Terminal cost: only quadratic penalty towards stability (also scaled)
+    cost_expr_e = 1e-6 * (x.T @ x) * cfg.cost_scale
     ocp.model.cost_expr_ext_cost_e = cost_expr_e
 
-    # State bounds
+    # State bounds (still in degrees)
     ocp.constraints.lbx = np.full(N_turbines, limits.yaw_min)
     ocp.constraints.ubx = np.full(N_turbines, limits.yaw_max)
     ocp.constraints.idxbx = np.arange(N_turbines)
 
-    # Control bounds
-    ocp.constraints.lbu = np.full(N_turbines, -limits.yaw_rate_max)
-    ocp.constraints.ubu = np.full(N_turbines, limits.yaw_rate_max)
+    # Control bounds (NORMALIZED: now [-1, 1] instead of [-yaw_rate_max, yaw_rate_max])
+    ocp.constraints.lbu = np.full(N_turbines, -1.0)
+    ocp.constraints.ubu = np.full(N_turbines, 1.0)
     ocp.constraints.idxbu = np.arange(N_turbines)
 
     # Terminal state bounds
@@ -433,41 +447,73 @@ class AcadosYawMPC:
             grad_time: gradient computation time
             grad_P: computed gradient
         """
-        # IMPORTANT: Compute gradient at CURRENT yaws, not delayed yaws!
-        # The gradient tells us how changing the current yaw angles affects future power.
-        # Using delayed yaws would give us the gradient at the wrong point in space.
+        # PURE TRACKING MODE: If target is set and target_weight is very high,
+        # skip power gradient computation and ONLY track the target.
+        # This is the correct mode for the hybrid architecture where the global
+        # optimizer has already found the optimal yaw.
 
-        t_grad = time.time()
-        P_at_current, grad_P, hess_diag = finite_diff_gradient(
-            self.wf_model, self.layout,
-            self.wind.U, self.wind.theta,
-            self.psi_current,  # Use CURRENT yaws, not delayed!
-            eps=1e-2,
-            return_hessian=True
-        )
-        grad_time = time.time() - t_grad
+        if self.cfg.target_weight > 1e6 and self.yaw_target is not None:
+            # Pure tracking mode - don't compute power gradient at all
+            t_grad = time.time()
+            # Just measure current power for monitoring
+            psi_delayed = self.get_delayed_yaw(k=0)
+            P_at_delayed = pywake_farm_power(
+                self.wf_model, self.layout,
+                self.wind.U, self.wind.theta,
+                psi_delayed
+            )
+            grad_time = time.time() - t_grad
 
-        if self.cfg.direction_bias != 0.0:
-            grad_P = grad_P + self.cfg.direction_bias * self.pref_sign
+            # Tracking error only (no power optimization)
+            # Use simple proportional controller gradient: attracts to target
+            tracking_error = self.yaw_target - self.psi_current
+            grad_P = -self.cfg.target_weight * tracking_error
 
-        if self.cfg.target_weight > 0.0 and self.yaw_target is not None:
-            grad_P = grad_P - (self.cfg.target_weight *
-                               (self.yaw_target - self.psi_current) /
-                               max(self.cfg.dt, 1e-6))
+            # Hessian must be POSITIVE for convexity!
+            # The cost is: -grad_P @ u + 0.5 * hess_diag @ u^2
+            # For tracking, we want a quadratic bowl centered at the tracking error
+            hess_diag = self.cfg.target_weight * np.ones(self.N)
 
-        if self.cfg.grad_clip is not None:
+            # Skip grad_clip in pure tracking mode - we need full strength
+            pure_tracking = True
+
+        else:
+            # POWER OPTIMIZATION MODE (original behavior)
+            # CRITICAL FIX: Compute gradient at DELAYED yaws!
+            # The actual power depends on delayed yaw angles (due to wake propagation).
+            # Computing gradient at current yaws gives wrong direction.
+            # We need dP/dψ where P is evaluated at the delayed angles.
+
+            psi_delayed = self.get_delayed_yaw(k=0)
+
+            t_grad = time.time()
+            P_at_delayed, grad_P, hess_diag = finite_diff_gradient(
+                self.wf_model, self.layout,
+                self.wind.U, self.wind.theta,
+                psi_delayed,  # Use DELAYED yaws for correct gradient direction!
+                eps=0.5,  # Larger epsilon for more accurate finite differences (0.5 degrees)
+                return_hessian=True
+            )
+            grad_time = time.time() - t_grad
+
+            if self.cfg.direction_bias != 0.0:
+                grad_P = grad_P + self.cfg.direction_bias * self.pref_sign
+
+            if self.cfg.target_weight > 0.0 and self.yaw_target is not None:
+                # Add tracking term to power gradient
+                grad_P = grad_P - (self.cfg.target_weight *
+                                   (self.yaw_target - self.psi_current) /
+                                   max(self.cfg.dt, 1e-6))
+
+            pure_tracking = False
+
+        # Clip gradient in power optimization mode only
+        if not pure_tracking and self.cfg.grad_clip is not None:
             grad_cap = float(abs(self.cfg.grad_clip))
             grad_P = np.clip(grad_P, -grad_cap, grad_cap)
 
-        # For reporting, also compute actual power including delays
-        psi_delayed = self.get_delayed_yaw(k=0)
-        P_with_delays = pywake_farm_power(
-            self.wf_model, self.layout,
-            self.wind.U, self.wind.theta,
-            psi_delayed
-        )
-
-        self.power_history.append(P_with_delays)
+        # Use power computed during gradient evaluation (P_at_delayed)
+        self.power_history.append(P_at_delayed)
 
         # Derive quadratic weights from local curvature (ensure convexity)
         base_weights = np.maximum(self.cfg.trust_region_weight, -hess_diag)
@@ -477,7 +523,22 @@ class AcadosYawMPC:
 
         quad_weights = base_weights
 
-        grad_P_scaled = grad_P.copy()
+        # CRITICAL: Scale gradient and quad_weights for NORMALIZED controls
+        # Since u is now dimensionless [-1, 1] and dynamics use u * yaw_rate_max * dt,
+        # we need to scale the cost parameters to maintain proper optimization:
+        #
+        # Cost has form: -grad_P @ u + 0.5 * quad_weights @ u^2
+        # where u is normalized and delta_psi = u * yaw_rate_max * dt
+        #
+        # Original gradient grad_P has units [Watts/degree]
+        # We want: -grad_P @ delta_psi = -grad_P @ (u * yaw_rate_max * dt)
+        #        = -(grad_P * yaw_rate_max * dt) @ u
+        scale_factor = self.limits.yaw_rate_max * self.cfg.dt
+        grad_P_scaled = grad_P * scale_factor
+
+        # Original quad term: quad_weights @ (u * yaw_rate_max * dt)^2
+        #                   = quad_weights * (yaw_rate_max * dt)^2 @ u^2
+        quad_weights_scaled = quad_weights * (scale_factor ** 2)
 
         # Update initial condition
         self.solver.set(0, 'lbx', self.psi_current)
@@ -486,12 +547,12 @@ class AcadosYawMPC:
         # Refresh reference trajectory start
         self.psi_ref_traj[0] = self.psi_current.copy()
 
-        # Update gradient parameters for all stages (use scaled gradient)
+        # Update gradient parameters for all stages (use SCALED gradient and weights)
         for k in range(self.cfg.N_h):
-            param_vec = np.concatenate([grad_P_scaled, quad_weights])
+            param_vec = np.concatenate([grad_P_scaled, quad_weights_scaled])
             self.solver.set(k, 'p', param_vec)
         # Also for terminal stage
-        terminal_param = np.concatenate([grad_P_scaled, quad_weights])
+        terminal_param = np.concatenate([grad_P_scaled, quad_weights_scaled])
         self.solver.set(self.cfg.N_h, 'p', terminal_param)
 
         # Warm start with current yaw
@@ -524,7 +585,9 @@ class AcadosYawMPC:
         # So we should use psi_plan[1] as our target!
         psi_next = psi_plan[1, :] if psi_plan.shape[0] > 1 else psi_plan[0, :]
 
-        # Enforce rate limit (should already be satisfied, but double-check)
+        # Enforce rate limit (with NORMALIZED controls, this should already be satisfied by solver)
+        # Kept as safety check: since u ∈ [-1, 1] and dynamics use u * yaw_rate_max * dt,
+        # the solver should never violate rate limits. This clip should be a no-op.
         dpsi = np.clip(
             psi_next - self.psi_current,
             -self.limits.yaw_rate_max * self.cfg.dt,

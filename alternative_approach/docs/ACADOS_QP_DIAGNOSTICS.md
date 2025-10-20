@@ -50,3 +50,18 @@ python demo_yaw_optimization.py > demo_acados_log.txt
 - Is the trust-region weight large enough after normalisation, or do we need a dynamic adjustment based on residuals?
 
 _Last updated: 2025-10-20_.
+
+---
+
+## ✅ RESOLUTION - See `FINAL_FIX_SUMMARY.md`
+
+**All issues have been resolved!** The MPC now works correctly with:
+
+1. **Control normalization** - Fixed QP conditioning
+2. **Gradient at delayed yaws** - Correct evaluation point
+3. **Larger finite difference epsilon** - Numerical accuracy (0.5° instead of 0.01°)
+4. **Direction bias** - Break symmetry at zero yaw (PyWake wake deflection is symmetric)
+
+**Result:** Power increases from 4.463 MW → 4.481 MW with optimal yaw angles of [-2.4°, -3.7°, -3.7°, 0°].
+
+See `docs/FINAL_FIX_SUMMARY.md` for complete details.

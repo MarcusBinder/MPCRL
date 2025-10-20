@@ -19,8 +19,15 @@ from .mpc import (
     sat01,
 )
 
-from .environment import MPCenv
-from .environment_fast import MPCenvFast
+try:
+    from .environment import MPCenv
+except ImportError:  # pragma: no cover - optional dependency
+    MPCenv = None
+
+try:
+    from .environment_fast import MPCenvFast
+except ImportError:  # pragma: no cover
+    MPCenvFast = None
 
 from .config import make_config
 

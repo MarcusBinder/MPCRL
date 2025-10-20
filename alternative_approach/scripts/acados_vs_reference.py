@@ -24,15 +24,15 @@ def compare_to_reference(data_path: Path):
     limits = Limits(yaw_min=-25, yaw_max=25, yaw_rate_max=1.0)
     cfg = MPCConfig(
         dt=10.0,
-        N_h=40,
-        lam_move=0.05,
-        trust_region_weight=0.01,
-        trust_region_step=10.0,
+        N_h=10,  # Moderate horizon for some lookahead
+        lam_move=10.0,  # Moderate regularization (scaled: 10 * 1^2 = 10)
+        trust_region_weight=1e4,  # Balanced with gradient O(1e6) after scaling
+        trust_region_step=5.0,
         max_gradient_scale=float("inf"),
-        max_quadratic_weight=1e4,
+        max_quadratic_weight=1e6,  # Allow large quadratic weights if needed
         direction_bias=0.0,
         initial_bias=0.0,
-        target_weight=500.0,
+        target_weight=0.0,  # Disabled for testing - was causing instability
         coarse_yaw_step=5.0,
         grad_clip=5e4,
     )

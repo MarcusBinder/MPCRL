@@ -1,6 +1,6 @@
 # Data Directory
 
-This directory contains wind field datasets used for wind farm simulations.
+This directory stores wind field datasets used by the SAC + MPC workflow.
 
 ## Current Data Files
 
@@ -16,4 +16,4 @@ The NetCDF files contain 3D wind field data with turbulence characteristics suit
 
 ## Note
 
-Data files (*.nc) are excluded from git due to their size. If you need to share data files, use alternative methods like cloud storage or data repositories.
+Surrogate datasets and related tooling have been archived under `alternative_approach/`. Data files (*.nc) remain excluded from git; share large files via external storage when necessary.
