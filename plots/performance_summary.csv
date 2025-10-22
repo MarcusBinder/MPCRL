@@ -1,0 +1,6 @@
+Method,Mean Power (MW),Power Increase (%),Std Dev (%)
+Greedy (No Control),6.95,0.00,-
+Sensor MPC,6.95,0.00,-
+Simple Estimator MPC,8.47,21.97,-
+Oracle MPC (Upper Bound),9.27,33.50,-
+"RL+MPC (Ours, n=1)",8.29 ± 0.00,19.39,-

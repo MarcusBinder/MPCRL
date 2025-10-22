@@ -279,12 +279,16 @@ def optimize_farm_back2front(
 ) -> np.ndarray:
     """
     Back-to-front optimization with warm-starting support.
-    
+
     Parameters:
     -----------
-    use_time_shifted : bool
-        If True, uses time-shifted cost function (paper's "CLC shifted")
-        If False, uses standard energy maximization
+    use_time_shifted : bool, default=False
+        If True, uses time-shifted cost function accounting for wake delays.
+        If False (recommended), uses standard total energy maximization.
+
+        Note: Empirical testing shows standard cost performs equivalently or
+        better for aligned flow scenarios while being computationally simpler.
+        Default is False.
     """
     n_turbines = model.n_turbines
     

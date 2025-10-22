@@ -1,0 +1,1 @@
+- The goal of this project is to combine MPC and RL for wind farm control. I want to see if we can improve the MPC controller, by adding in a RL layer.

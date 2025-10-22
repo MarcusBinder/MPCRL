@@ -29,6 +29,11 @@ try:
 except ImportError:  # pragma: no cover
     MPCenvFast = None
 
+try:
+    from .environment_eval import MPCenvEval
+except ImportError:  # pragma: no cover - optional dependency
+    MPCenvEval = None
+
 from .config import make_config
 
 __all__ = [
@@ -44,6 +49,7 @@ __all__ = [
     # Environment
     "MPCenv",
     "MPCenvFast",
+    "MPCenvEval",
     # Configuration
     "make_config",
 ]
