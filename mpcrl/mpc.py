@@ -10,7 +10,7 @@ from py_wake.site import UniformSite
 from py_wake.deflection_models.jimenez import JimenezWakeDeflection
 from py_wake.superposition_models import SquaredSum
 from py_wake.superposition_models import MaxSum
-# from py_wake.examples.data.hornsrev1 import V80
+import logging
 
 # --------------------------
 # Basis function
@@ -112,15 +112,9 @@ class WindFarmModel:
         # MIN_WS = 3.0   # Minimum wind speed for valid physics
 
         self.U_inf = U_inf
-        # self.TI = max(TI, MIN_TI)
         self.wd = wd
         self.TI = TI
 
-        # # Warn if values were clamped
-        # if U_inf < MIN_WS:
-        #     print(f"Warning: Wind speed {U_inf:.3f} m/s below minimum {MIN_WS} m/s, clamped to {self.U_inf:.3f}")
-        # if TI < MIN_TI:
-        #     print(f"Warning: TI {TI:.5f} below minimum {MIN_TI}, clamped to {self.TI:.5f}")
         self.site = UniformSite(p_wd=[1.0], ti=self.TI)
         self.wfm = Blondel_Cathelain_2020(
             self.site, self.wt, 
@@ -167,25 +161,9 @@ class WindFarmModel:
                 wd=[self.wd], ws=[self.U_inf], 
                 tilt=0, yaw=yaw_angles_sorted
             )
-            # except Exception as e:
-            #     print(f"Simulation error: {e}")
-            #     print("The inputs were:")
-            #     print(f"  Yaw angles (sorted): {yaw_angles_sorted}")
-            #     print(f"  U_inf: {self.U_inf}, TI: {self.TI}, wd: {self.wd}")
-            #     # Return very low power as penalty instead of crashing
-            #     return np.zeros(self.n_turbines)
 
             powers = sim_res.Power.values.flatten()
-
-            # Check for NaN or Inf values and handle gracefully
-            # if np.any(np.isnan(powers)) or np.any(np.isinf(powers)):
-            #     print(f"Warning: NaN or Inf detected in power output!")
-            #     print(f"  Yaw angles (sorted): {yaw_angles_sorted}")
-            #     print(f"  U_inf: {self.U_inf}, TI: {self.TI}, wd: {self.wd}")
-            #     print(f"  Powers before fix: {powers}")
-                # Replace only NaN/Inf values with zero, keep valid values
             powers = np.where(np.isnan(powers) | np.isinf(powers), 0.0, powers)
-                # print(f"  Powers after fix: {powers}")
 
             self.cache.put(tuple(yaw_angles_sorted), self.U_inf, self.TI, self.wd, powers)
         
@@ -272,10 +250,12 @@ def optimize_farm_back2front(
     t_AH: float, 
     dt_opt: float, 
     T_opt: float, 
-    maxfun: int, 
     seed: int,
     initial_params: np.ndarray = None,
-    use_time_shifted: bool = False
+    use_time_shifted: bool = False,
+    method: str = "direct",         # <--- NEW: 'direct' | 'shgo' | 'sobol_powell'
+    per_turbine_budget: int = 30,    # <--- NEW: tiny eval budget per turbine
+    verbose: bool = False
 ) -> np.ndarray:
     """
     Back-to-front optimization with warm-starting support.
@@ -291,9 +271,11 @@ def optimize_farm_back2front(
         Default is False.
     """
     n_turbines = model.n_turbines
-    
+    # print("Running the back-to-front optimization...")
+    # print("Using method: ", method)
+    # [0.5, 0.5] corresponds to no yaw adjustment. So it just holds current yaw.
     if initial_params is None:
-        initial_params = [[0.75, 0.2]] + [[0.5, 0.5] for _ in range(n_turbines - 1)]
+        initial_params = [[0.5, 0.5]] + [[0.5, 0.5] for _ in range(n_turbines - 1)]
     
     opt_params = np.array(initial_params, dtype=float)
 
@@ -333,12 +315,269 @@ def optimize_farm_back2front(
                 # Standard energy maximization
                 return -farm_energy(P_opt, t_opt)
 
-        res = dual_annealing(
-            objective_func, 
-            bounds=[(0.0, 1.0), (0.0, 1.0)], 
-            seed=seed + i, 
-            maxfun=maxfun
+        x_best, _ = solve_problem(
+            objective=lambda z: objective_func(np.asarray(z)),
+            seed=seed + i,
+            method=method,
+            budget=per_turbine_budget,
+            verbose=verbose,
         )
-        opt_params[i, :] = res.x
-    
+        opt_params[i, :] = x_best
+
+
     return opt_params
+
+
+def make_logger(name="solve_problem", level=logging.INFO):
+    """Convenience creator that avoids duplicate handlers."""
+    logger = logging.getLogger(name)
+    if not logger.handlers:
+        handler = logging.StreamHandler()
+        fmt = logging.Formatter("[%(name)s][%(levelname)s] %(message)s")
+        handler.setFormatter(fmt)
+        logger.addHandler(handler)
+    logger.setLevel(level)
+    return logger
+
+def solve_problem(objective, seed=0, method="direct", budget=30, verbose=False, logger=None):
+    """
+    Minimize 'objective(x)' for x in [0,1]^2 under a strict evaluation budget.
+    Returns (x_best (2,), f_best).
+
+    Methods:
+      "direct","shgo","sobol_powell",
+      "dual_annealing","dual_annealing_powell",
+      "gp_bo","gp_bo_powell"
+
+    Logging:
+      - Set verbose=True to print INFO logs to stdout
+      - Or provide a `logger` (logging.Logger). If both provided, `logger` wins.
+    """
+    # ----------------- logging setup -----------------
+    if logger is None:
+        logger = make_logger(level=logging.INFO if verbose else logging.WARNING)
+
+    bounds = [(0.0, 1.0), (0.0, 1.0)]
+    if budget <= 0:
+        raise ValueError("budget must be >= 1")
+
+    # ---- evaluation counter (wrap the user's objective) ----
+    eval_count = {"n": 0}
+    def f_wrapped(x):
+        eval_count["n"] += 1
+        return float(objective(np.asarray(x, dtype=float)))
+
+    def log_result(tag, x, f):
+        logger.info(f"{tag}: x={np.asarray(x).round(6)}, f={float(f):.6g}, evals={eval_count['n']}")
+
+    # Single-shot fallback used by methods that can't run with tiny budgets
+    def single_probe(tag):
+        try:
+            from scipy.stats.qmc import Sobol
+            X = Sobol(d=2, scramble=True, seed=seed).random_base2(1)
+            x = X[0]
+            logger.info(f"{tag}: using single Sobol probe (budget={budget})")
+        except Exception as e:
+            logger.warning(f"{tag}: Sobol unavailable ({type(e).__name__}: {e}); using random probe")
+            rng = np.random.default_rng(seed)
+            x = rng.random(2)
+        f = f_wrapped(x)
+        log_result(tag, x, f)
+        return np.asarray(x, dtype=float), f
+
+    logger.info(f"method={method}, budget={budget}, seed={seed}")
+
+    # ----------------- solver branches -----------------
+    if method == "direct":
+        try:
+            from scipy.optimize import direct
+            logger.info("DIRECT available; honoring maxfun strictly.")
+            res = direct(f_wrapped, bounds, maxfun=int(budget), locally_biased=True)
+            log_result("DIRECT", res.x, res.fun)
+            return np.asarray(res.x), float(res.fun)
+        except Exception as e:
+            logger.warning(f"DIRECT unavailable ({type(e).__name__}: {e}); falling back to sampling.")
+            # fallback: exactly `budget` samples, pick best
+            m = int(budget)
+            try:
+                from scipy.stats.qmc import Sobol
+                X = Sobol(d=2, scramble=True, seed=seed).random_base2(int(np.ceil(np.log2(m))))[:m]
+                logger.info(f"Fallback: Sobol sampling m={len(X)}")
+            except Exception:
+                rng = np.random.default_rng(seed)
+                X = rng.random((m, 2))
+                logger.info(f"Fallback: random sampling m={len(X)}")
+            fX = np.array([f_wrapped(x) for x in X], dtype=float)
+            j = int(np.argmin(fX))
+            log_result("DIRECT-fallback-best", X[j], fX[j])
+            return np.asarray(X[j]), float(fX[j])
+
+    elif method == "shgo":
+        if budget < 6:
+            logger.info("SHGO: budget too small (<6). Falling back to single probe.")
+            return single_probe("SHGO-fallback")
+        try:
+            from scipy.optimize import shgo
+            n = int(budget)
+            logger.info(f"SHGO: running with n={n}, iters=1, sampling='sobol'")
+            res = shgo(f_wrapped, bounds, n=n, iters=1, sampling_method="sobol")
+            log_result("SHGO", res.x, res.fun)
+            return np.asarray(res.x), float(res.fun)
+        except Exception as e:
+            logger.warning(f"SHGO failed ({type(e).__name__}: {e}); falling back to single probe.")
+            return single_probe("SHGO-except-fallback")
+
+    elif method == "sobol_powell":
+        from scipy.optimize import minimize
+        # --- allocate budget ---
+        # aim for ~1/3 of the budget on sampling, up to 12 samples
+        m = int(min(12, max(1, budget // 3)))
+        local_budget = max(0, int(budget) - m)
+        logger.info(f"Sobol+Powell: m={m} samples, local_budget={local_budget}")
+
+        # --- sampling phase ---
+        try:
+            from scipy.stats.qmc import Sobol
+            # Sobol.random_base2(k) yields 2**k points; choose k so we have >= m
+            k = int(np.ceil(np.log2(max(1, m))))
+            X = Sobol(d=2, scramble=True, seed=seed).random_base2(k)[:m]
+            logger.info(f"Sobol sampling with m={len(X)} (2**{k} generated, sliced to m)")
+        except Exception as e:
+            logger.warning(f"Sobol unavailable ({type(e).__name__}: {e}); using random sampling")
+            rng = np.random.default_rng(seed)
+            X = rng.random((m, 2))
+
+        fX = np.array([f_wrapped(x) for x in X], dtype=float)
+        j0 = int(np.argmin(fX))
+        best_x, best_f = np.asarray(X[j0]), float(fX[j0])
+        logger.info(f"Sampling best: j={j0}, f={best_f:.6g}")
+
+        # --- local polish (Powell, box-bounded) ---
+        if local_budget >= 5:
+            logger.info(f"Powell local polish with maxfev={local_budget}")
+            res = minimize(
+                f_wrapped, best_x,
+                method="Powell",
+                bounds=bounds,                       # SciPy Powell respects bounds (recent versions)
+                options={"maxfev": local_budget, "xtol": 1e-3, "ftol": 1e-3}
+            )
+            if res.fun <= best_f:
+                best_x, best_f = np.asarray(res.x), float(res.fun)
+                logger.info("Powell improved the solution.")
+            else:
+                logger.info("Powell did not improve; keeping sampling best.")
+        else:
+            logger.info("Local budget too small (<5); skipping local polish.")
+
+        log_result("Sobol+Powell", best_x, best_f)
+        return best_x, best_f
+
+
+    elif method == "dual_annealing":
+        try:
+            from scipy.optimize import dual_annealing
+            logger.info(f"Dual Annealing with maxfun={int(budget)}")
+            res = dual_annealing(f_wrapped, bounds=bounds, seed=seed, maxfun=int(budget))
+            log_result("DualAnnealing", res.x, res.fun)
+            return np.asarray(res.x), float(res.fun)
+        except Exception as e:
+            logger.warning(f"Dual Annealing failed ({type(e).__name__}: {e}); fallback to single probe.")
+            return single_probe("DualAnnealing-except-fallback")
+
+    elif method == "dual_annealing_powell":
+        from scipy.optimize import minimize
+        try:
+            from scipy.optimize import dual_annealing
+        except Exception as e:
+            logger.warning(f"Dual Annealing unavailable ({type(e).__name__}: {e}); fallback to Sobol+Powell logic.")
+            # emulate sobol_powell with given budget
+            return solve_problem(objective, seed, "sobol_powell", budget, verbose=False, logger=logger)
+
+        if budget == 1:
+            logger.info("DualAnnealing+Powell: budget=1 → single probe fallback.")
+            return single_probe("DualAnnealing+Powell-fallback")
+
+        budget_da = max(1, int(np.floor(0.7 * budget)))
+        budget_local = max(0, int(budget) - budget_da)
+        logger.info(f"DualAnnealing+Powell: DA={budget_da}, local={budget_local}")
+
+        da = dual_annealing(f_wrapped, bounds=bounds, seed=seed, maxfun=budget_da)
+        x0, f0 = np.asarray(da.x), float(da.fun)
+        logger.info(f"DA result: f={f0:.6g}")
+
+        if budget_local >= 5:
+            logger.info(f"Powell local polish with maxfev={budget_local}")
+            loc = minimize(
+                f_wrapped, x0, method="Powell", bounds=bounds,
+                options={"maxfev": budget_local, "xtol": 1e-3, "ftol": 1e-3}
+            )
+            if loc.fun <= f0:
+                log_result("DualAnnealing+Powell", loc.x, loc.fun)
+                return np.asarray(loc.x), float(loc.fun)
+            else:
+                logger.info("Powell did not improve; keeping DA result.")
+        else:
+            logger.info("Local budget too small (<5); skipping local polish.")
+
+        log_result("DualAnnealing+Powell", x0, f0)
+        return x0, f0
+
+    elif method in ("gp_bo", "gp_bo_powell"):
+        try:
+            from skopt import gp_minimize
+            from skopt.space import Real
+            logger.info("scikit-optimize detected.")
+        except Exception as e:
+            logger.warning(f"skopt unavailable ({type(e).__name__}: {e}); falling back to single probe.")
+            return single_probe("GPBO-fallback")
+
+        if budget < 4:
+            m = int(budget)
+            logger.info(f"GP-BO: budget too small (<4). Fallback to {m} probe(s).")
+            if m <= 1:
+                return single_probe("GPBO-tiny-fallback")
+            # m≥2: pick best of m samples
+            try:
+                from scipy.stats.qmc import Sobol
+                X = Sobol(d=2, scramble=True, seed=seed).random_base2(int(np.ceil(np.log2(m))))[:m]
+                logger.info(f"Fallback Sobol sampling m={len(X)}")
+            except Exception:
+                rng = np.random.default_rng(seed)
+                X = rng.random((m, 2))
+                logger.info(f"Fallback random sampling m={len(X)}")
+            fX = np.array([f_wrapped(x) for x in X], dtype=float)
+            j = int(np.argmin(fX))
+            log_result("GPBO-fallback-best", X[j], fX[j])
+            return np.asarray(X[j]), float(fX[j])
+
+        space = [Real(0.0, 1.0, name="x0"), Real(0.0, 1.0, name="x1")]
+        def f_list(x_list):
+            return f_wrapped(x_list)  # x_list is list-like of length 2
+
+        n_calls = int(budget)
+        n_init = max(2, min(6, n_calls // 3))
+        logger.info(f"GP-BO: n_calls={n_calls}, n_init={n_init}, acq=EI")
+
+        res_bo = gp_minimize(
+            f_list, space,
+            acq_func="EI",
+            n_calls=n_calls,
+            n_initial_points=n_init,
+            noise=1e-10,
+            random_state=seed,
+            n_restarts_optimizer=3,
+            xi=0.01,
+        )
+        x_bo, f_bo = np.asarray(res_bo.x, dtype=float), float(res_bo.fun)
+        log_result("GP-BO", x_bo, f_bo)
+
+        if method == "gp_bo":
+            return x_bo, f_bo
+
+        # For strictness we don't spend extra budget on local polish here.
+        # If you want a polish, just increase 'budget' and split it yourself.
+        logger.info("GP-BO+Powell: strict budget; skipping local polish by default.")
+        return x_bo, f_bo
+
+    else:
+        raise ValueError(f"Unknown method {method!r}")
