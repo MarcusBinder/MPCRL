@@ -24,10 +24,10 @@ try:
 except ImportError:  # pragma: no cover - optional dependency
     MPCenv = None
 
-try:
-    from .environment_fast import MPCenvFast
-except ImportError:  # pragma: no cover
-    MPCenvFast = None
+# try:
+#     from .NOTUSED_environment_fast import MPCenvFast
+# except ImportError:  # pragma: no cover
+#     MPCenvFast = None
 
 try:
     from .environment_eval import MPCenvEval
@@ -48,7 +48,7 @@ __all__ = [
     "sat01",
     # Environment
     "MPCenv",
-    "MPCenvFast",
+    # "MPCenvFast",
     "MPCenvEval",
     # Configuration
     "make_config",

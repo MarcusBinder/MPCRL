@@ -62,13 +62,18 @@ class MPCenv(WindFarmEnv):
 
         # Step 2: optimize the yaw angles
         optimized_params = optimize_farm_back2front(
-            self.mpc_model, current_yaws_sorted, 
+            self.mpc_model, 
+            current_yaws_sorted, 
             r_gamma=self.yaw_step_sim/self.dt_sim, # yaw rate (deg/s)
             t_AH=100.0,  # action horizon (s)
-            dt_opt=25.0,  # optimization time step (s)
-            T_opt=400.0,  # prediction horizon (s)
-            maxfun=20,
+            dt_opt=20.0,  # optimization time step (s)
+            T_opt=600.0,  # prediction horizon (s)
+            # maxfun=20,
             seed=42,
+            use_time_shifted=False,
+            method="sobol_powell",
+            per_turbine_budget=20,
+            verbose=False,
             initial_params=self.previous_opt_params
         )
 
@@ -78,7 +83,8 @@ class MPCenv(WindFarmEnv):
         # Use the optimized parameters to run the delay model and get the next yaw angles
         t_action, trajectories, _ = run_farm_delay_loop_optimized(
             self.mpc_model, optimized_params, current_yaws_sorted, 
-            r_gamma=0.3, t_AH=100.0, dt=self.dt_sim, T=self.dt_mpc
+            r_gamma=self.yaw_step_sim/self.dt_sim, 
+            t_AH=100.0, dt=self.dt_sim, T=self.dt_mpc
         )
 
         # The next yaw angles are the simply the last element of each trajectory
