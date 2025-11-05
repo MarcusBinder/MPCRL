@@ -8,6 +8,7 @@ import numpy as np
 import xarray as xr
 from pathos.pools import ProcessPool
 from dataclasses import dataclass
+from simple_parsing import ArgumentParser
 
 import torch
 
@@ -65,6 +66,7 @@ def test_fun_baseline(arg):
                                         xDist=5, yDist=5)
 
     if TI_type == "None":
+        print("No TI measurements will be used.")
         ti = 0.0  # Override ti to 0 if no TI measurements
 
 
@@ -137,33 +139,40 @@ class EvalArgs:
     dt_env: int = 30
     yaw_step: float = 0.3
     turbtype: str = "DTU10MW"
-    TI_type: str = "None"
+    TI_type: str = "Random"
     max_eps: int = 30
 
 
 if __name__ == '__main__':
     import argparse
 
-    parser = argparse.ArgumentParser(description='Evaluate MPC baseline agents')
-    parser.add_argument('--agent_type', type=str, default='oracle',
-                        choices=['oracle', 'front_turbine', 'simple_estimator'],
-                        help='Type of baseline agent to evaluate')
-    parser.add_argument('--output_name', type=str, default=None,
-                        help='Output filename (default: mpc_{agent_type}.nc)')
-    parser.add_argument('--num_workers', type=int, default=4,
-                        help='Number of parallel workers')
-    parser.add_argument('--smoothing_window', type=int, default=3,
-                        help='Smoothing window for front_turbine agent')
+    # parser = argparse.ArgumentParser(description='Evaluate MPC baseline agents')
+    # parser.add_argument('--agent_type', type=str, default='oracle',
+    #                     choices=['oracle', 'front_turbine', 'simple_estimator'],
+    #                     help='Type of baseline agent to evaluate')
+    # parser.add_argument('--output_name', type=str, default=None,
+    #                     help='Output filename (default: mpc_{agent_type}.nc)')
+    # parser.add_argument('--num_workers', type=int, default=4,
+    #                     help='Number of parallel workers')
+    # parser.add_argument('--smoothing_window', type=int, default=3,
+    #                     help='Smoothing window for front_turbine agent')
 
-    cmd_args = parser.parse_args()
+    # cmd_args = parser.parse_args()
 
-    # Create args with defaults
-    args = EvalArgs(
-        agent_type=cmd_args.agent_type,
-        output_name=cmd_args.output_name,
-        num_workers=cmd_args.num_workers,
-        smoothing_window=cmd_args.smoothing_window
-    )
+    # # Create args with defaults
+    # args = EvalArgs(
+    #     agent_type=cmd_args.agent_type,
+    #     output_name=cmd_args.output_name,
+    #     num_workers=cmd_args.num_workers,
+    #     smoothing_window=cmd_args.smoothing_window
+    # )
+
+    args = EvalArgs()
+
+    parser = ArgumentParser()
+    parser.add_arguments(EvalArgs, dest="eval_args")
+    args = parser.parse_args()
+    args = args.eval_args
 
     # Set default evaluation conditions
     wdirs = args.wdirs if args.wdirs is not None else [265, 270, 275]

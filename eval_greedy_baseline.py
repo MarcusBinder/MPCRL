@@ -9,6 +9,7 @@ import numpy as np
 import xarray as xr
 from pathos.pools import ProcessPool
 from dataclasses import dataclass
+from simple_parsing import ArgumentParser
 
 from windgym.WindGym import FarmEval, AgentEvalFast
 from windgym.WindGym.Agents import GreedyAgent
@@ -76,16 +77,16 @@ def test_fun_greedy(arg):
         wd_scaling_min=250, wd_scaling_max=290,
         ti_scaling_min=0.01, ti_scaling_max=0.15,
         TurbBox=turbbox_path,
-        config=make_config_greedy(),
+        config=make_config(),
         turbtype=TI_type,
         dt_sim=dt_sim,
         dt_env=dt_env,
         yaw_step_sim=yaw_step * dt_sim,
-        Baseline_comp=True,  # Enable baseline comparison
+        # Baseline_comp=True,  # Enable baseline comparison
     )
 
     # Create the greedy agent (no control, zero yaw offset)
-    model = GreedyAgent()
+    model = GreedyAgent(yaw_step=yaw_step * dt_sim)
 
     # Use windgym's AgentEvalFast for evaluation
     ds = AgentEvalFast(
@@ -125,26 +126,19 @@ class EvalArgs:
     dt_env: int = 30
     yaw_step: float = 0.3
     turbtype: str = "DTU10MW"
-    TI_type: str = "None"
+    TI_type: str = "Random"
     max_eps: int = 30
 
 
 if __name__ == '__main__':
-    import argparse
+    # import argparse
 
-    parser = argparse.ArgumentParser(description='Evaluate Greedy Agent (no control baseline)')
-    parser.add_argument('--output_name', type=str, default='greedy_baseline',
-                        help='Output filename (default: greedy_baseline.nc)')
-    parser.add_argument('--num_workers', type=int, default=4,
-                        help='Number of parallel workers')
+    args = EvalArgs()
 
-    cmd_args = parser.parse_args()
-
-    # Create args with defaults
-    args = EvalArgs(
-        output_name=cmd_args.output_name,
-        num_workers=cmd_args.num_workers
-    )
+    parser = ArgumentParser()
+    parser.add_arguments(EvalArgs, dest="eval_args")
+    args = parser.parse_args()
+    args = args.eval_args
 
     # Set default evaluation conditions
     wdirs = args.wdirs if args.wdirs is not None else [265, 270, 275]

@@ -8,6 +8,7 @@ import numpy as np
 import xarray as xr
 from pathos.pools import ProcessPool
 from dataclasses import dataclass
+from simple_parsing import ArgumentParser
 
 import torch
 import torch.nn as nn
@@ -414,7 +415,7 @@ def test_fun(arg):
 @dataclass
 class EvalArgs:
     """Arguments for evaluation"""
-    model_folder: str = "testrun7"
+    model_folder: str = "HEJ:D"
     """the folder containing the trained model"""
     wandb_project: str = "MPC_RL"
     """the wandb project name to fetch run config from"""
@@ -441,6 +442,12 @@ if __name__ == '__main__':
     # Default evaluation conditions
     args = EvalArgs()
 
+    parser = ArgumentParser()
+    parser.add_arguments(EvalArgs, dest="eval_args")
+    args = parser.parse_args()
+    args = args.eval_args
+
+
     # Set default values if not provided
     wdirs = args.wdirs if args.wdirs is not None else [265, 270, 275]
     wss = args.wss if args.wss is not None else [9]
@@ -448,6 +455,9 @@ if __name__ == '__main__':
     BOXES = args.boxes if args.boxes is not None else ["Random"]
     deterministic_modes = [args.deterministic]
 
+    if args.model_folder is None:
+        print("Please provide a model folder to evaluate.")
+        exit(1)
     # Check if the model folder exists
     model_folder = f"runs/{args.model_folder}"
     if not os.path.exists(model_folder):
@@ -478,6 +488,7 @@ if __name__ == '__main__':
                 print("Using default config values")
                 use_wandb = False
             else:
+                print(f"Found wandb run: {run.name}")
                 # Extract config from wandb
                 dt_sim = run.config.get("dt_sim", 10)
                 dt_env = run.config.get("dt_env", 30)
@@ -495,14 +506,15 @@ if __name__ == '__main__':
 
     # Use default values if wandb is not available
     if not use_wandb:
+        print("not use_wandb")
         dt_sim = 10
         dt_env = 30
         yaw_step = 0.3
         turbtype = "DTU10MW"
-        TI_type = "None"
+        TI_type = "Random"
         max_eps = 30
         net_complexity = "default"
-
+    print("TI_type:", TI_type)
     # Find all model files in the folder
     files = os.listdir(model_folder)
     model_files = [f for f in files if f.endswith(".pt")]
