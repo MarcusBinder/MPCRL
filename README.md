@@ -26,18 +26,65 @@ Large wind-field datasets live under `data/` and remain ignored by git (see `dat
 
 ## Repository Layout
 
+### Main Training & Evaluation Scripts
+
 | Path | Description |
 |------|-------------|
-| `sac_MPC_local.py` | Entry point for SAC training / evaluation. |
-| `mpcrl/` | Core MPC utilities, environment wrappers, and configuration helpers. |
+| `sac_MPC_local.py` | Main entry point for SAC + MPC training loop. |
+| `eval_sac_mpc.py` | Evaluate trained SAC + MPC agents on wind scenarios. |
+| `eval_mpc_baselines.py` | Evaluate MPC baseline agents (Oracle, FrontTurbine, SimpleEstimator). |
+| `eval_greedy_baseline.py` | Evaluate greedy baseline (no control). |
+| `mpc_baseline_agents.py` | Baseline agent implementations for comparison. |
+| `benchmark_optimizers.py` | Benchmark different optimization methods for MPC. |
+
+### Core Package
+
+| Path | Description |
+|------|-------------|
+| `mpcrl/` | Core MPC utilities, environment wrappers, and configuration. |
+| `mpcrl/mpc.py` | Wind farm MPC model, optimization functions, and yaw control. |
+| `mpcrl/environment.py` | SAC training environment (MPCenv). |
+| `mpcrl/environment_eval.py` | Evaluation environment (MPCenvEval). |
+| `mpcrl/config.py` | Configuration utilities. |
+| `mpcrl/validation/` | Hyperparameter validation and visualization tools. |
+
+### Data & Documentation
+
+| Path | Description |
+|------|-------------|
 | `data/` | Wind-field inputs used by the SAC workflow (NetCDF, etc.). |
+| `examples/` | Example Jupyter notebooks demonstrating MPCRL usage. |
+| `EVALUATION_SUMMARY.md` | Complete guide to the evaluation framework and baselines. |
+| `How to Eval.md` | Quick reference for evaluating trained agents. |
 | `alternative_approach/` | Archived acados-based NMPC experiments, docs, and scripts. |
 
-See `docs/README.md` for a short guide to the SAC pipeline, and browse `alternative_approach/` if you need the previous gradient-based MPC exploration.
+---
+
+## Evaluating Models
+
+After training an agent, you can evaluate it against baselines using the evaluation scripts. See `EVALUATION_SUMMARY.md` for a complete guide or `How to Eval.md` for a quick reference.
+
+**Example evaluation workflow:**
+
+```bash
+# Evaluate trained SAC+MPC agent
+python eval_sac_mpc.py --model_folder SAC1006
+
+# Evaluate baselines
+python eval_greedy_baseline.py
+python eval_mpc_baselines.py --agent_type oracle
+python eval_mpc_baselines.py --agent_type front_turbine
+python eval_mpc_baselines.py --agent_type simple_estimator
+```
+
+---
+
+## Examples and Notebooks
+
+The `examples/` directory contains Jupyter notebooks demonstrating the MPCRL package. See `examples/README.md` for details on running the notebooks.
 
 ---
 
 ## Contributing
 
 Issues and pull requests focusing on the SAC + MPC stack are welcome. If you experiment with the archived acados workflow, please keep related files inside `alternative_approach/` to avoid mixing the two approaches.
-
