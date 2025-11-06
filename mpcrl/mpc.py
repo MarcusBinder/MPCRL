@@ -12,6 +12,12 @@ from py_wake.superposition_models import SquaredSum
 from py_wake.superposition_models import MaxSum
 import logging
 
+# Handle numpy version compatibility
+if hasattr(np, 'trapezoid'):
+    trapz_func = np.trapezoid
+else:
+    trapz_func = np.trapz
+
 # --------------------------
 # Basis function
 # --------------------------
@@ -241,7 +247,7 @@ def run_farm_delay_loop_optimized(
 
 def farm_energy(P_matrix: np.ndarray, t: np.ndarray) -> float:
     """Calculate total energy using trapezoidal integration."""
-    return np.trapezoid(np.sum(P_matrix, axis=0), t)
+    return trapz_func(np.sum(P_matrix, axis=0), t)
 
 def optimize_farm_back2front(
     model: WindFarmModel, 
@@ -294,7 +300,7 @@ def optimize_farm_back2front(
                 
                 # For this turbine i, integrate over action horizon only
                 n_steps_action = int(t_AH / dt_opt)
-                energy += np.trapezoid(P_opt[i, :n_steps_action], 
+                energy += trapz_func(P_opt[i, :n_steps_action], 
                                       t_opt[:n_steps_action])
                 
                 # For downstream turbines, shift integration window by delay
@@ -307,7 +313,7 @@ def optimize_farm_back2front(
                     end_idx = min(delay_steps + n_steps_action, len(t_opt))
                     
                     if start_idx < len(t_opt):
-                        energy += np.trapezoid(P_opt[j, start_idx:end_idx], 
+                        energy += trapz_func(P_opt[j, start_idx:end_idx], 
                                              t_opt[start_idx:end_idx])
                 
                 return -energy
