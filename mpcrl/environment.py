@@ -1,3 +1,4 @@
+from random import seed
 from WindGym import WindFarmEnv
 from .config import make_config
 from typing import Any, Dict, Optional, Union
@@ -34,6 +35,12 @@ class MPCenv(WindFarmEnv):
         return obs, info
 
     def step(self, action):
+        if self.seed is None:
+            seed_for_optim = self.np_random.integers(0, 1e6)
+        else:
+            seed_for_optim = self.seed + self.timestep
+            
+            
 
         # Step 1: update the MPC model with the current state
         estimated_wd = action[0]
@@ -67,11 +74,11 @@ class MPCenv(WindFarmEnv):
             r_gamma=self.yaw_step_sim/self.dt_sim, # yaw rate (deg/s)
             t_AH=100.0,  # action horizon (s)
             dt_opt=20.0,  # optimization time step (s)
-            T_opt=600.0,  # prediction horizon (s)
+            T_opt=500.0,  # prediction horizon (s)
             # maxfun=20,
-            seed=42,
+            seed=seed_for_optim,
             use_time_shifted=False,
-            method="sobol_powell",
+            method="direct",
             per_turbine_budget=20,
             verbose=False,
             initial_params=self.previous_opt_params
