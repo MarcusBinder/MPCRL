@@ -63,26 +63,31 @@ class DatasetGenerator:
 
         # Define bounds for each variable
         # yaw_0, yaw_1, yaw_2 (upstream turbines): [-30, 30]
-        # yaw_3 (downstream): [0, 0] (always aligned)
+        # yaw_3 (downstream): always 0 (not sampled, added later)
         # wind_speed: [6, 12]
         # wind_direction: [260, 280] (mainly 270°, with some variation)
 
-        n_features = 6  # yaw_0, yaw_1, yaw_2, yaw_3, wind_speed, wind_direction
+        # Only sample 5 dimensions (exclude yaw_3 which is always 0)
+        n_features = 5  # yaw_0, yaw_1, yaw_2, wind_speed, wind_direction
 
         # Create Latin hypercube sampler
         sampler = qmc.LatinHypercube(d=n_features, seed=self.seed)
         samples = sampler.random(n=self.n_samples)
 
-        # Scale to actual ranges
-        l_bounds = np.array([-30, -30, -30, 0, 6, 260])  # Lower bounds
-        u_bounds = np.array([30, 30, 30, 0, 12, 280])   # Upper bounds
+        # Scale to actual ranges (without yaw_3)
+        l_bounds = np.array([-30, -30, -30, 6, 260])  # Lower bounds
+        u_bounds = np.array([30, 30, 30, 12, 280])   # Upper bounds
 
         scaled_samples = qmc.scale(samples, l_bounds, u_bounds)
 
-        # Split into yaw angles and wind conditions
-        yaw_samples = scaled_samples[:, :4]  # First 4 columns
-        wind_speed_samples = scaled_samples[:, 4]  # 5th column
-        wind_dir_samples = scaled_samples[:, 5]  # 6th column
+        # Split into components
+        yaw_012_samples = scaled_samples[:, :3]  # First 3 columns (yaw_0, yaw_1, yaw_2)
+        wind_speed_samples = scaled_samples[:, 3]  # 4th column
+        wind_dir_samples = scaled_samples[:, 4]  # 5th column
+
+        # Add yaw_3 = 0 (last turbine always aligned)
+        yaw_3_samples = np.zeros((self.n_samples, 1))
+        yaw_samples = np.column_stack([yaw_012_samples, yaw_3_samples])  # [yaw_0, yaw_1, yaw_2, yaw_3]
 
         # Combine wind conditions
         wind_samples = np.column_stack([wind_speed_samples, wind_dir_samples])
