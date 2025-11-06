@@ -6,6 +6,12 @@ This script demonstrates the MPC controller optimizing yaw angles
 to increase wind farm power production.
 """
 
+import sys
+from pathlib import Path
+
+# Add parent directory to path so we can import nmpc_windfarm_acados_fixed
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 import numpy as np
 import matplotlib.pyplot as plt
 from nmpc_windfarm_acados_fixed import AcadosYawMPC, Farm, Wind, Limits, MPCConfig

@@ -11,6 +11,12 @@ This approach achieves BOTH:
 - ✅ Fast real-time control with constraints
 """
 
+import sys
+from pathlib import Path
+
+# Add parent directory to path so we can import nmpc_windfarm_acados_fixed
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 import numpy as np
 from scipy.optimize import differential_evolution
 from nmpc_windfarm_acados_fixed import (
