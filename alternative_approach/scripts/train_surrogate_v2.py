@@ -162,8 +162,7 @@ class PowerSurrogateLightning(pl.LightningModule):
             optimizer,
             mode='min',
             factor=0.5,
-            patience=20,
-            verbose=True
+            patience=20
         )
 
         return {
