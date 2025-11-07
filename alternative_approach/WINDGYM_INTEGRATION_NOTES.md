@@ -225,10 +225,56 @@ Once MPC is working:
 - **Q:** Should we include transient dynamics or just steady-state?
 - **Q:** Sample from random initial conditions or reset each time?
 
-### Surrogate Model
+### Surrogate Model - Handling Dynamics ⭐
 - **Q:** Should surrogate predict power or power + dynamics?
 - **Q:** Include state history (LSTM/Transformer) or just current state?
 - **Q:** Multi-step prediction or single-step?
+
+**ANSWERED - Recommendation for handling temporal dynamics:**
+
+**Option 1: Stacked Observations (RECOMMENDED START)**
+- Concatenate recent history: `[yaw(t), yaw(t-1), ..., yaw(t-k), wind(t), wind(t-1), ...]`
+- Use feedforward NN (current architecture)
+- Window size: 5-10 timesteps (50-100 seconds)
+- **Pros:** Simple, compatible with l4casadi, captures short-medium term dynamics
+- **Cons:** Fixed window, input dimension grows
+
+**Option 2: Explicit Delay States (ADD IF NEEDED)**
+- Include `yaw(t-33)` explicitly (330s wake delay)
+- Physically motivated
+- Combine with stacked observations
+- **Pros:** Captures long-term wake effects specifically
+- **Cons:** Requires tracking long history buffer
+
+**Option 3: Recurrent Model - LSTM/GRU (IF NEEDED)**
+- Use sequence model to process temporal data
+- Learns what history matters
+- **Pros:** Flexible, captures long-term dependencies
+- **Cons:** More complex, l4casadi compatibility uncertain, harder to train
+
+**Implementation approach:**
+1. Start with stacked observations (10 steps = 100s history)
+2. If insufficient, add explicit delay term (t-33)
+3. If still needed, explore LSTM (check l4casadi support)
+
+**MPC State with History:**
+```python
+# State includes history
+x = [yaw(t), yaw(t-1), yaw(t-2), ..., yaw(t-k)]
+
+# Dynamics: shift history
+x_next = [yaw(t) + u(t)*dt, yaw(t), yaw(t-1), ..., yaw(t-k+1)]
+
+# Surrogate input: stacked state + wind
+surrogate_input = [x, wind(t), wind(t-1), ...]
+```
+
+**Input dimension with history:**
+- Without history: 6 inputs (4 yaw + 2 wind)
+- With 10-step history: 60 inputs (4×10 yaw + 2×10 wind)
+- With history + delay: 64 inputs (60 + 4 delayed yaw)
+
+See detailed analysis in commit notes.
 
 ### MPC-WindGym Interface
 - **Q:** What MPC update frequency? (1s, 5s, 10s?)
