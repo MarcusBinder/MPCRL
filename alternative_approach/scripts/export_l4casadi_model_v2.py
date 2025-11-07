@@ -73,36 +73,44 @@ def load_model(checkpoint_path: str = None):
     if checkpoint_path is None:
         print("Auto-detecting checkpoint...")
 
-        # Look for checkpoint in models/checkpoints/
-        checkpoints_dir = Path("models/checkpoints")
+        # First, try the manual save (has all the info we need!)
+        manual_save = Path("models/power_surrogate.pth")
 
-        if not checkpoints_dir.exists():
-            print(f"\n❌ ERROR: Checkpoints directory not found: {checkpoints_dir}")
-            print("\nYou need to train the model first!")
-            print("\nRun these steps in order:")
-            print("  1. python scripts/generate_dataset_v2.py      # Generate training data")
-            print("  2. python scripts/train_surrogate_v2.py       # Train model")
-            print("  3. python scripts/export_l4casadi_model_v2.py # Export (you are here)")
-            print("\nSee FULL_PIPELINE.md for detailed instructions.")
-            print("\nOr run: python check_pipeline.py")
-            sys.exit(1)
+        if manual_save.exists():
+            checkpoint_path = manual_save
+            print(f"  Using manual save: {checkpoint_path}")
+        else:
+            # Fall back to Lightning checkpoints (but these are missing config)
+            checkpoints_dir = Path("models/checkpoints")
 
-        # Find all .ckpt files
-        ckpt_files = list(checkpoints_dir.glob("*.ckpt"))
+            if not checkpoints_dir.exists():
+                print(f"\n❌ ERROR: No checkpoints found!")
+                print("\nYou need to train the model first!")
+                print("\nRun these steps in order:")
+                print("  1. python scripts/generate_dataset_v2.py      # Generate training data")
+                print("  2. python scripts/train_surrogate_v2.py       # Train model")
+                print("  3. python scripts/export_l4casadi_model_v2.py # Export (you are here)")
+                print("\nSee FULL_PIPELINE.md for detailed instructions.")
+                print("\nOr run: python check_pipeline.py")
+                sys.exit(1)
 
-        if not ckpt_files:
-            print(f"\n❌ ERROR: No checkpoint files found in {checkpoints_dir}")
-            print("\nTrain the model first:")
-            print("  python scripts/train_surrogate_v2.py --max_epochs 100")
-            sys.exit(1)
+            # Find all .ckpt files
+            ckpt_files = list(checkpoints_dir.glob("*.ckpt"))
 
-        # Sort by modification time (newest first)
-        ckpt_files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+            if not ckpt_files:
+                print(f"\n❌ ERROR: No checkpoint files found in {checkpoints_dir}")
+                print("\nTrain the model first:")
+                print("  python scripts/train_surrogate_v2.py --max_epochs 100")
+                sys.exit(1)
 
-        # Use the newest one
-        checkpoint_path = ckpt_files[0]
-        print(f"  Found {len(ckpt_files)} checkpoint(s), using newest:")
-        print(f"  {checkpoint_path}")
+            # Sort by modification time (newest first)
+            ckpt_files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+
+            # Use the newest one
+            checkpoint_path = ckpt_files[0]
+            print(f"  Found {len(ckpt_files)} Lightning checkpoint(s), using newest:")
+            print(f"  {checkpoint_path}")
+            print(f"  ⚠️  Warning: Lightning checkpoints may be missing config info")
 
     else:
         checkpoint_path = Path(checkpoint_path)
@@ -115,35 +123,33 @@ def load_model(checkpoint_path: str = None):
 
     checkpoint = torch.load(checkpoint_path, map_location='cpu')
 
-    # Debug: show available keys
-    print(f"  Checkpoint keys: {list(checkpoint.keys())}")
-
     # Check if this is a PyTorch Lightning checkpoint or manual save
-    if 'hyper_parameters' in checkpoint:
-        print("  Detected PyTorch Lightning checkpoint format")
-        # Extract from Lightning format
-        model_config = checkpoint['hyper_parameters']['model_config'].copy()
-        model_config.pop('n_parameters', None)
-
-        model_state_dict = checkpoint['state_dict']
-        # Remove 'model.' prefix from Lightning state dict
-        model_state_dict = {k.replace('model.', ''): v for k, v in model_state_dict.items()}
-
-        normalization = checkpoint['hyper_parameters']['normalization']
-
-    elif 'model_config' in checkpoint:
-        print("  Detected manual checkpoint format")
-        # Manual save format
+    if 'model_config' in checkpoint and 'normalization' in checkpoint:
+        # Manual save format (preferred - has everything we need!)
+        print("  ✅ Detected manual save format")
         model_config = checkpoint['model_config'].copy()
         model_config.pop('n_parameters', None)
         model_state_dict = checkpoint['model_state_dict']
         normalization = checkpoint['normalization']
+
+    elif 'state_dict' in checkpoint:
+        # PyTorch Lightning checkpoint (missing config and normalization!)
+        print("  ⚠️  Detected PyTorch Lightning checkpoint format")
+        print("  ❌ ERROR: Lightning checkpoints don't contain model config or normalization!")
+        print("\nThe training script saves a complete checkpoint at:")
+        print("  models/power_surrogate.pth")
+        print("\nPlease ensure training completed successfully.")
+        print("If the file doesn't exist, retrain the model:")
+        print("  python scripts/train_surrogate_v2.py --max_epochs 100")
+        sys.exit(1)
+
     else:
         print(f"\n❌ ERROR: Unknown checkpoint format!")
         print(f"Available keys: {list(checkpoint.keys())}")
-        print("\nExpected either:")
-        print("  - PyTorch Lightning format (with 'hyper_parameters')")
-        print("  - Manual format (with 'model_config')")
+        print("\nExpected manual save format with:")
+        print("  - 'model_config'")
+        print("  - 'model_state_dict'")
+        print("  - 'normalization'")
         sys.exit(1)
 
     # Create model
