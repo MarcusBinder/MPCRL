@@ -39,7 +39,11 @@ def load_model(model_path: str) -> PowerSurrogate:
     checkpoint = torch.load(model_path, map_location='cpu')
 
     # Create model
-    model_config = checkpoint['model_config']
+    model_config = checkpoint['model_config'].copy()
+
+    # Remove computed properties that aren't constructor arguments
+    model_config.pop('n_parameters', None)
+
     model = PowerSurrogate(**model_config)
 
     # Load weights
