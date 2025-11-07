@@ -96,9 +96,13 @@ def load_model(checkpoint_path: str = None):
             print("  python scripts/train_surrogate_v2.py --max_epochs 100")
             sys.exit(1)
 
-        # Use the first one (they're all "best" checkpoints from PyTorch Lightning)
+        # Sort by modification time (newest first)
+        ckpt_files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+
+        # Use the newest one
         checkpoint_path = ckpt_files[0]
-        print(f"  Found checkpoint: {checkpoint_path}")
+        print(f"  Found {len(ckpt_files)} checkpoint(s), using newest:")
+        print(f"  {checkpoint_path}")
 
     else:
         checkpoint_path = Path(checkpoint_path)
@@ -111,20 +115,47 @@ def load_model(checkpoint_path: str = None):
 
     checkpoint = torch.load(checkpoint_path, map_location='cpu')
 
-    # Create original model
-    model_config = checkpoint['model_config'].copy()
-    model_config.pop('n_parameters', None)
+    # Debug: show available keys
+    print(f"  Checkpoint keys: {list(checkpoint.keys())}")
 
+    # Check if this is a PyTorch Lightning checkpoint or manual save
+    if 'hyper_parameters' in checkpoint:
+        print("  Detected PyTorch Lightning checkpoint format")
+        # Extract from Lightning format
+        model_config = checkpoint['hyper_parameters']['model_config'].copy()
+        model_config.pop('n_parameters', None)
+
+        model_state_dict = checkpoint['state_dict']
+        # Remove 'model.' prefix from Lightning state dict
+        model_state_dict = {k.replace('model.', ''): v for k, v in model_state_dict.items()}
+
+        normalization = checkpoint['hyper_parameters']['normalization']
+
+    elif 'model_config' in checkpoint:
+        print("  Detected manual checkpoint format")
+        # Manual save format
+        model_config = checkpoint['model_config'].copy()
+        model_config.pop('n_parameters', None)
+        model_state_dict = checkpoint['model_state_dict']
+        normalization = checkpoint['normalization']
+    else:
+        print(f"\n❌ ERROR: Unknown checkpoint format!")
+        print(f"Available keys: {list(checkpoint.keys())}")
+        print("\nExpected either:")
+        print("  - PyTorch Lightning format (with 'hyper_parameters')")
+        print("  - Manual format (with 'model_config')")
+        sys.exit(1)
+
+    # Create model
     model = PowerSurrogate(**model_config)
-    model.load_state_dict(checkpoint['model_state_dict'])
+    model.load_state_dict(model_state_dict)
 
     # Set normalization
-    norm = checkpoint['normalization']
     model.set_normalization(
-        np.array(norm['input_mean']),
-        np.array(norm['input_std']),
-        np.array(norm['output_mean']),
-        np.array(norm['output_std'])
+        np.array(normalization['input_mean']),
+        np.array(normalization['input_std']),
+        np.array(normalization['output_mean']),
+        np.array(normalization['output_std'])
     )
 
     model.eval()
@@ -136,7 +167,14 @@ def load_model(checkpoint_path: str = None):
     print(f"  ✅ Model loaded and wrapped")
     print(f"  Parameters: {model.count_parameters():,}")
 
-    return simple_model, checkpoint
+    # Return normalized checkpoint dict
+    normalized_checkpoint = {
+        'model_config': model_config,
+        'model_state_dict': model_state_dict,
+        'normalization': normalization
+    }
+
+    return simple_model, normalized_checkpoint
 
 
 def validate_wrapper(original_model: PowerSurrogate, simple_model: SimplePowerSurrogate, n_tests: int = 100):
