@@ -78,6 +78,10 @@ class SurrogateMPC:
         self.limits = limits or Limits()
         self.config = config or SurrogateMPCConfig()
 
+        # Set dimensions first
+        self.n_turbines = len(farm.x)
+        self.current_yaw = np.zeros(self.n_turbines)
+
         # Load surrogate model
         print(f"Loading surrogate model from {model_path}...")
         with open(model_path, 'rb') as f:
@@ -93,10 +97,6 @@ class SurrogateMPC:
         print("Building acados OCP...")
         self.solver = self._build_acados_ocp()
         print("  ✅ acados solver ready")
-
-        # State
-        self.n_turbines = len(farm.x)
-        self.current_yaw = np.zeros(self.n_turbines)
 
     def _build_acados_ocp(self) -> AcadosOcpSolver:
         """Build acados OCP with surrogate cost function."""
