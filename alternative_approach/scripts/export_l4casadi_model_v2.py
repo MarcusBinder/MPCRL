@@ -71,6 +71,18 @@ def load_model(checkpoint_path: str):
 
     print(f"Loading model from {checkpoint_path}...")
 
+    # Check if checkpoint exists
+    checkpoint_path_obj = Path(checkpoint_path)
+    if not checkpoint_path_obj.exists():
+        print(f"\n❌ ERROR: Checkpoint not found at {checkpoint_path}")
+        print("\nYou need to train the model first!")
+        print("\nRun these steps in order:")
+        print("  1. python scripts/generate_dataset_v2.py      # Generate training data")
+        print("  2. python scripts/train_surrogate_v2.py       # Train model")
+        print("  3. python scripts/export_l4casadi_model_v2.py # Export (you are here)")
+        print("\nSee FULL_PIPELINE.md for detailed instructions.")
+        sys.exit(1)
+
     checkpoint = torch.load(checkpoint_path, map_location='cpu')
 
     # Create original model
