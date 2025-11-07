@@ -87,7 +87,11 @@ def export_l4casadi(model: PowerSurrogate, output_path: str):
     x = ca.SX.sym('x', 6)
 
     # Evaluate (l4casadi handles batching automatically)
-    y = l4c_model(x)
+    y_raw = l4c_model(x)
+
+    # Extract scalar output (model returns [batch, 1], we want scalar)
+    # Use indexing to get single element
+    y = y_raw[0] if y_raw.shape[0] > 0 else y_raw
 
     # Create function
     power_func = ca.Function('power_surrogate', [x], [y])
@@ -207,11 +211,11 @@ def test_gradients(casadi_func: ca.Function):
 
     print(f"  Test point: yaw={x_test[:4]}, ws={x_test[4]}, wd={x_test[5]}")
     print(f"  Jacobian shape: {jac.shape}")
-    print(f"  Jacobian: {jac}")
+    print(f"  Jacobian (first row): {jac[0, :]}")
 
-    # Check if gradients are reasonable
-    grad_norm = float(ca.norm_2(jac))
-    print(f"  Gradient norm: {grad_norm:.2f}")
+    # Check if gradients are reasonable (use Frobenius norm for matrix)
+    grad_norm = float(ca.norm_fro(jac))
+    print(f"  Gradient Frobenius norm: {grad_norm:.2f}")
 
     if grad_norm > 0 and grad_norm < 1e10:
         print(f"  ✅ Gradients look reasonable")
