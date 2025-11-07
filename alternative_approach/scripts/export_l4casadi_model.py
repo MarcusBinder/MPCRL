@@ -132,7 +132,9 @@ def validate_export(pytorch_model: PowerSurrogate, casadi_func: ca.Function, n_t
     # CasADi predictions
     y_casadi = np.zeros((n_tests, 1))
     for i in range(n_tests):
-        y_casadi[i] = float(casadi_func(X_test[i]))
+        result = casadi_func(X_test[i])
+        # Extract scalar value from CasADi DM
+        y_casadi[i] = np.array(result).flatten()[0]
 
     # Compare
     abs_diff = np.abs(y_pytorch - y_casadi)
