@@ -79,7 +79,6 @@ def export_l4casadi(model: PowerSurrogate, output_path: str):
     # Note: model already handles normalization internally
     l4c_model = l4c.L4CasADi(
         model,
-        model_expects_batch_dim=True,
         name='power_surrogate'
     )
 
@@ -87,14 +86,8 @@ def export_l4casadi(model: PowerSurrogate, output_path: str):
     # Input: [yaw_0, yaw_1, yaw_2, yaw_3, wind_speed, wind_direction]
     x = ca.SX.sym('x', 6)
 
-    # Wrap in batch dimension for model
-    x_batched = ca.reshape(x, (1, 6))
-
-    # Evaluate
-    y_batched = l4c_model(x_batched)
-
-    # Remove batch dimension
-    y = ca.reshape(y_batched, (1, 1))
+    # Evaluate (l4casadi handles batching automatically)
+    y = l4c_model(x)
 
     # Create function
     power_func = ca.Function('power_surrogate', [x], [y])
