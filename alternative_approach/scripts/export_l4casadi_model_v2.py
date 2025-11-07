@@ -66,21 +66,47 @@ class SimplePowerSurrogate(nn.Module):
         return y
 
 
-def load_model(checkpoint_path: str):
+def load_model(checkpoint_path: str = None):
     """Load trained model from checkpoint."""
+
+    # Auto-detect checkpoint if not specified
+    if checkpoint_path is None:
+        print("Auto-detecting checkpoint...")
+
+        # Look for checkpoint in models/checkpoints/
+        checkpoints_dir = Path("models/checkpoints")
+
+        if not checkpoints_dir.exists():
+            print(f"\n❌ ERROR: Checkpoints directory not found: {checkpoints_dir}")
+            print("\nYou need to train the model first!")
+            print("\nRun these steps in order:")
+            print("  1. python scripts/generate_dataset_v2.py      # Generate training data")
+            print("  2. python scripts/train_surrogate_v2.py       # Train model")
+            print("  3. python scripts/export_l4casadi_model_v2.py # Export (you are here)")
+            print("\nSee FULL_PIPELINE.md for detailed instructions.")
+            print("\nOr run: python check_pipeline.py")
+            sys.exit(1)
+
+        # Find all .ckpt files
+        ckpt_files = list(checkpoints_dir.glob("*.ckpt"))
+
+        if not ckpt_files:
+            print(f"\n❌ ERROR: No checkpoint files found in {checkpoints_dir}")
+            print("\nTrain the model first:")
+            print("  python scripts/train_surrogate_v2.py --max_epochs 100")
+            sys.exit(1)
+
+        # Use the first one (they're all "best" checkpoints from PyTorch Lightning)
+        checkpoint_path = ckpt_files[0]
+        print(f"  Found checkpoint: {checkpoint_path}")
+
+    else:
+        checkpoint_path = Path(checkpoint_path)
 
     print(f"Loading model from {checkpoint_path}...")
 
-    # Check if checkpoint exists
-    checkpoint_path_obj = Path(checkpoint_path)
-    if not checkpoint_path_obj.exists():
+    if not checkpoint_path.exists():
         print(f"\n❌ ERROR: Checkpoint not found at {checkpoint_path}")
-        print("\nYou need to train the model first!")
-        print("\nRun these steps in order:")
-        print("  1. python scripts/generate_dataset_v2.py      # Generate training data")
-        print("  2. python scripts/train_surrogate_v2.py       # Train model")
-        print("  3. python scripts/export_l4casadi_model_v2.py # Export (you are here)")
-        print("\nSee FULL_PIPELINE.md for detailed instructions.")
         sys.exit(1)
 
     checkpoint = torch.load(checkpoint_path, map_location='cpu')
@@ -232,11 +258,10 @@ def main():
     print("="*70)
 
     # Paths
-    checkpoint_path = 'checkpoints/power_surrogate_best.ckpt'
     output_path = 'models/power_surrogate_casadi.pkl'
 
-    # Load
-    simple_model, checkpoint = load_model(checkpoint_path)
+    # Load (auto-detect checkpoint)
+    simple_model, checkpoint = load_model()
 
     # Load original model for validation
     original_model_config = checkpoint['model_config'].copy()
