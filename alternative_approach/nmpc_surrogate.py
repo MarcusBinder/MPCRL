@@ -136,6 +136,9 @@ class SurrogateMPC:
         # Initial state constraint
         ocp.constraints.x0 = np.zeros(nx)
 
+        # Set initial parameter values (required by acados)
+        ocp.parameter_values = np.array([self.wind.U, self.wind.theta])
+
         # Solver options
         ocp.solver_options.qp_solver = self.config.qp_solver
         ocp.solver_options.nlp_solver_type = self.config.nlp_solver
