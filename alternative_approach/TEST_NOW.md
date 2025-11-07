@@ -1,20 +1,32 @@
 # Quick Test Guide ✅
 
-**Bug Fixed:** Removed double-normalization (commit 34a10ae)
+**Root Cause Found:** TorchScript can't trace conditional logic (commit b3405a3)
 
 ---
 
 ## What Happened
 
-My previous "fix" was **completely wrong**! I added manual normalization thinking l4casadi wasn't exporting it, but l4casadi actually exports the **full PyTorch model** including normalization.
+The original PyTorch model has `if not normalized:` conditional logic that **TorchScript can't properly trace**. This caused l4casadi to export the model WITHOUT proper normalization.
 
-**Result:** Double-normalization caused predictions to be 19 million times wrong (95 MW instead of 5 MW!)
+**Result:** CasADi predictions wrong (12 MW instead of 4.8 MW!)
 
-**Fix:** Removed all manual normalization - now just passing raw inputs directly to CasADi function.
+**Fix:** Created `SimplePowerSurrogate` wrapper without conditionals that TorchScript can trace properly.
 
 ---
 
-## Test Now
+## Fix Steps
+
+### FIRST: Re-export the model
+```bash
+cd ~/Documents/mpcrl/alternative_approach
+python scripts/export_l4casadi_model_v2.py
+```
+
+This will re-export with the fixed wrapper. Should show "✅ Validation passed!"
+
+---
+
+## Then Test
 
 ### 1. Validate Export (should take ~1 second)
 ```bash
