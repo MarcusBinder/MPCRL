@@ -4,9 +4,35 @@ Quick validation: Check if CasADi function matches PyTorch model predictions.
 
 import numpy as np
 import torch
+import torch.nn as nn
 import casadi as ca
 import pickle
 from pathlib import Path
+import sys
+
+# Add parent directory to path to import surrogate module
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from alternative_approach.surrogate_module.model import PowerSurrogate
+
+
+# Define SimplePowerSurrogate here (needed for unpickling)
+class SimplePowerSurrogate(nn.Module):
+    """Simplified wrapper for l4casadi export."""
+
+    def __init__(self, original_model):
+        super().__init__()
+        self.network = original_model.network
+        self.input_mean = original_model.input_mean.clone()
+        self.input_std = original_model.input_std.clone()
+        self.output_mean = original_model.output_mean.clone()
+        self.output_std = original_model.output_std.clone()
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x_norm = (x - self.input_mean) / (self.input_std + 1e-8)
+        y_norm = self.network(x_norm)
+        y = y_norm * self.output_std + self.output_mean
+        return y
+
 
 def validate_casadi_export():
     """Test that CasADi function produces same results as PyTorch model."""
