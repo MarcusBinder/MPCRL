@@ -85,15 +85,44 @@ def export_l4casadi(network: torch.nn.Module, normalization: dict, output_path: 
     print("  Exporting ONLY the network (no normalization)")
     print("  Normalization will be handled manually in MPC")
 
-    # Wrap network with l4casadi
-    l4c_model = l4c.L4CasADi(network, name='power_network')
+    # Create a wrapper that handles batching properly
+    class NetworkWrapper(torch.nn.Module):
+        def __init__(self, network):
+            super().__init__()
+            self.network = network
+
+        def forward(self, x):
+            # Ensure x has batch dimension
+            if x.dim() == 1:
+                x = x.unsqueeze(0)  # Add batch dimension: (6,) -> (1, 6)
+            elif x.dim() == 2 and x.shape[0] != 1:
+                # If shape is (6, 1), transpose to (1, 6)
+                if x.shape[0] == 6 and x.shape[1] == 1:
+                    x = x.T
+
+            # Forward through network
+            y = self.network(x)
+
+            # Return scalar
+            return y.squeeze()
+
+    wrapper = NetworkWrapper(network)
+    wrapper.eval()
+
+    # Wrap with l4casadi
+    l4c_model = l4c.L4CasADi(wrapper, name='power_network')
 
     # Create CasADi function
     # Input: NORMALIZED [yaw_0, yaw_1, yaw_2, yaw_3, wind_speed, wind_direction]
     # Output: NORMALIZED power
     x_norm = ca.SX.sym('x_norm', 6)
     y_norm = l4c_model(x_norm)
-    y = y_norm[0] if y_norm.shape[0] > 0 else y_norm
+
+    # Extract scalar if needed
+    if hasattr(y_norm, 'shape') and y_norm.shape[0] > 1:
+        y = y_norm[0]
+    else:
+        y = y_norm
 
     network_func = ca.Function('power_network', [x_norm], [y])
 
@@ -108,19 +137,23 @@ def export_l4casadi(network: torch.nn.Module, normalization: dict, output_path: 
             'network_func': network_func,
             'normalization': normalization,
             'l4c_model': l4c_model,
+            'network_wrapper': wrapper,  # Keep reference
         }, f)
 
     print(f"  ✅ Saved to {output_path}")
 
-    return network_func, normalization
+    return network_func, normalization, wrapper
 
 
 def validate_export(network: torch.nn.Module, network_func: ca.Function,
-                   normalization: dict, n_tests: int = 100):
+                   normalization: dict, wrapper=None, n_tests: int = 100):
     """Validate that CasADi matches PyTorch."""
 
     print("\nValidating export...")
     print(f"  Testing {n_tests} random NORMALIZED samples...")
+
+    # Use wrapper if provided, otherwise use network directly
+    eval_model = wrapper if wrapper is not None else network
 
     # Generate random NORMALIZED inputs (mean=0, std=1)
     np.random.seed(42)
@@ -129,7 +162,9 @@ def validate_export(network: torch.nn.Module, network_func: ca.Function,
     # PyTorch predictions (on normalized input)
     with torch.no_grad():
         X_torch = torch.tensor(X_norm_test, dtype=torch.float32)
-        y_norm_pytorch = network(X_torch).numpy()
+        y_norm_pytorch = eval_model(X_torch).numpy()
+        if y_norm_pytorch.ndim == 1:
+            y_norm_pytorch = y_norm_pytorch.reshape(-1, 1)
 
     # CasADi predictions (on normalized input)
     y_norm_casadi = np.zeros((n_tests, 1))
@@ -164,7 +199,9 @@ def validate_export(network: torch.nn.Module, network_func: ca.Function,
     X_norm_pytorch = (X_raw_test - input_mean) / (input_std + 1e-8)
     with torch.no_grad():
         X_torch = torch.tensor(X_norm_pytorch, dtype=torch.float32)
-        y_norm = network(X_torch).numpy()
+        y_norm = eval_model(X_torch).numpy()
+        if y_norm.ndim == 1:
+            y_norm = y_norm.reshape(-1, 1)
         y_pytorch = y_norm * output_std + output_mean
 
     # CasADi: manual normalize, predict, manual denormalize
@@ -212,10 +249,10 @@ def main():
     print(f"  output_std: {normalization['output_std']:.1f}")
 
     # Export
-    network_func, normalization = export_l4casadi(network, normalization, output_path)
+    network_func, normalization, wrapper = export_l4casadi(network, normalization, output_path)
 
     # Validate
-    validate_export(network, network_func, normalization)
+    validate_export(network, network_func, normalization, wrapper=wrapper)
 
     print("\n" + "="*70)
     print("✅ Export complete!")
