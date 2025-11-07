@@ -1,5 +1,5 @@
 """
-Quick validation: Check if manual normalization matches PyTorch model predictions.
+Quick validation: Check if CasADi function matches PyTorch model predictions.
 """
 
 import numpy as np
@@ -8,11 +8,11 @@ import casadi as ca
 import pickle
 from pathlib import Path
 
-def validate_manual_normalization():
-    """Test that manual normalization produces same results as PyTorch model."""
+def validate_casadi_export():
+    """Test that CasADi function produces same results as PyTorch model."""
 
     print("="*70)
-    print("Validating Manual Normalization Fix")
+    print("Validating CasADi Export")
     print("="*70)
 
     # Load model
@@ -28,17 +28,8 @@ def validate_manual_normalization():
     pytorch_model = data['pytorch_model']
     power_func = data['power_func']
 
-    # Extract normalization parameters
-    input_mean = np.array(pytorch_model.input_mean.cpu())
-    input_std = np.array(pytorch_model.input_std.cpu())
-    output_mean = float(pytorch_model.output_mean.cpu())
-    output_std = float(pytorch_model.output_std.cpu())
-
-    print(f"\nNormalization parameters:")
-    print(f"  input_mean: {input_mean}")
-    print(f"  input_std:  {input_std}")
-    print(f"  output_mean: {output_mean:.1f}")
-    print(f"  output_std:  {output_std:.1f}")
+    print(f"\nLoaded PyTorch model and CasADi function")
+    print(f"  Both should take raw inputs and return raw outputs")
 
     # Test cases
     test_cases = [
@@ -54,26 +45,18 @@ def validate_manual_normalization():
     errors = []
 
     for i, x in enumerate(test_cases):
-        # PyTorch prediction (with built-in normalization)
+        # PyTorch prediction (raw input)
         with torch.no_grad():
             x_torch = torch.tensor(x, dtype=torch.float32).unsqueeze(0)
             power_pytorch = float(pytorch_model(x_torch).item())
 
-        # CasADi with manual normalization
-        x_casadi = ca.DM(x)
-
-        # Manual normalize
-        x_normalized = (x_casadi - input_mean) / (input_std + 1e-8)
-
-        # Get normalized prediction
-        power_normalized = power_func(x_normalized)
-
-        # Manual denormalize
-        power_casadi = float(np.array(power_normalized).flatten()[0]) * output_std + output_mean
+        # CasADi prediction (raw input - should match PyTorch)
+        power_casadi_result = power_func(x)
+        power_casadi = float(np.array(power_casadi_result).flatten()[0])
 
         # Compare
         error = abs(power_casadi - power_pytorch)
-        rel_error = error / abs(power_pytorch) * 100
+        rel_error = error / abs(power_pytorch) * 100 if power_pytorch != 0 else 0
         errors.append(error)
         max_error = max(max_error, error)
 
@@ -89,19 +72,20 @@ def validate_manual_normalization():
     print(f"  Mean error: {np.mean(errors)/1e3:.2f} kW")
 
     if max_error < 100:  # Less than 100 W
-        print("\n✅ Manual normalization is working correctly!")
+        print("\n✅ CasADi export is working correctly!")
         print("   Error is negligible (< 100 W)")
         return True
     elif max_error < 1000:  # Less than 1 kW
-        print("\n⚠️  Manual normalization has small errors")
+        print("\n⚠️  CasADi export has small errors")
         print("   Error is acceptable (< 1 kW)")
         return True
     else:
-        print("\n❌ Manual normalization has significant errors!")
-        print("   Error is too large (> 1 kW)")
+        print("\n❌ CasADi export has significant errors!")
+        print(f"   Error is too large ({max_error/1e3:.2f} kW)")
+        print("\nDEBUG: Check if l4casadi is properly exporting the normalization layers")
         return False
 
 
 if __name__ == '__main__':
-    success = validate_manual_normalization()
+    success = validate_casadi_export()
     exit(0 if success else 1)

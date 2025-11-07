@@ -63,14 +63,8 @@ class SurrogateMPCCasADi:
         self.pytorch_model = data['pytorch_model']
         self.power_func = data['power_func']
 
-        # Extract normalization parameters
-        self.input_mean = np.array(self.pytorch_model.input_mean.cpu())
-        self.input_std = np.array(self.pytorch_model.input_std.cpu())
-        self.output_mean = float(self.pytorch_model.output_mean.cpu())
-        self.output_std = float(self.pytorch_model.output_std.cpu())
-
         print("  ✅ Surrogate model loaded")
-        print(f"  Normalization: input_mean={self.input_mean}, input_std={self.input_std}")
+        print(f"  Model handles normalization internally via l4casadi")
 
         # Build MPC optimization problem
         print("Building MPC optimization problem...")
@@ -112,18 +106,11 @@ class SurrogateMPCCasADi:
             # Current state (yaw angles in degrees)
             yaw_deg = get_state(k)
 
-            # Manually normalize inputs
             # Input: [yaw_0, yaw_1, yaw_2, yaw_3, wind_speed, wind_direction]
-            raw_input = ca.vertcat(yaw_deg, self.wind.U, self.wind.theta)
+            surrogate_input = ca.vertcat(yaw_deg, self.wind.U, self.wind.theta)
 
-            # Normalize: (x - mean) / std
-            normalized_input = (raw_input - self.input_mean) / (self.input_std + 1e-8)
-
-            # Power from surrogate (on normalized input)
-            power_normalized = self.power_func(normalized_input)
-
-            # Denormalize output: y * std + mean
-            power = power_normalized * self.output_std + self.output_mean
+            # Power from surrogate (handles normalization internally)
+            power = self.power_func(surrogate_input)
 
             # Control (yaw rate in deg/s)
             u = get_control(k)
@@ -137,15 +124,8 @@ class SurrogateMPCCasADi:
 
         # Terminal cost (just power)
         yaw_deg_N = get_state(N)
-
-        # Manually normalize
-        raw_input_N = ca.vertcat(yaw_deg_N, self.wind.U, self.wind.theta)
-        normalized_input_N = (raw_input_N - self.input_mean) / (self.input_std + 1e-8)
-
-        # Power from surrogate
-        power_normalized_N = self.power_func(normalized_input_N)
-        power_N = power_normalized_N * self.output_std + self.output_mean
-
+        surrogate_input_N = ca.vertcat(yaw_deg_N, self.wind.U, self.wind.theta)
+        power_N = self.power_func(surrogate_input_N)
         J += -power_N
 
         # Constraints
