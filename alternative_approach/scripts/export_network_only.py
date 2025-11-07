@@ -31,6 +31,40 @@ except ImportError:
 from alternative_approach.surrogate_module.model import PowerSurrogate
 
 
+class NetworkWrapper(torch.nn.Module):
+    """
+    Wrapper that handles batching for l4casadi export.
+
+    Ensures:
+    - Input has batch dimension (1, 6)
+    - Output is 2D matrix (1, 1) as required by l4casadi
+    """
+
+    def __init__(self, network):
+        super().__init__()
+        self.network = network
+
+    def forward(self, x):
+        # Ensure x has batch dimension
+        if x.dim() == 1:
+            x = x.unsqueeze(0)  # Add batch dimension: (6,) -> (1, 6)
+        elif x.dim() == 2 and x.shape[0] != 1:
+            # If shape is (6, 1), transpose to (1, 6)
+            if x.shape[0] == 6 and x.shape[1] == 1:
+                x = x.T
+
+        # Forward through network
+        y = self.network(x)
+
+        # Ensure output is 2D: (1, 1) as required by l4casadi
+        if y.dim() == 1:
+            y = y.unsqueeze(-1)  # (batch,) -> (batch, 1)
+        if y.dim() == 0:
+            y = y.reshape(1, 1)  # scalar -> (1, 1)
+
+        return y
+
+
 def load_model(checkpoint_path: str = "models/power_surrogate.pth"):
     """Load trained model from checkpoint."""
 
@@ -85,32 +119,7 @@ def export_l4casadi(network: torch.nn.Module, normalization: dict, output_path: 
     print("  Exporting ONLY the network (no normalization)")
     print("  Normalization will be handled manually in MPC")
 
-    # Create a wrapper that handles batching properly
-    class NetworkWrapper(torch.nn.Module):
-        def __init__(self, network):
-            super().__init__()
-            self.network = network
-
-        def forward(self, x):
-            # Ensure x has batch dimension
-            if x.dim() == 1:
-                x = x.unsqueeze(0)  # Add batch dimension: (6,) -> (1, 6)
-            elif x.dim() == 2 and x.shape[0] != 1:
-                # If shape is (6, 1), transpose to (1, 6)
-                if x.shape[0] == 6 and x.shape[1] == 1:
-                    x = x.T
-
-            # Forward through network
-            y = self.network(x)
-
-            # Ensure output is 2D: (1, 1) as required by l4casadi
-            if y.dim() == 1:
-                y = y.unsqueeze(-1)  # (batch,) -> (batch, 1)
-            if y.dim() == 0:
-                y = y.reshape(1, 1)  # scalar -> (1, 1)
-
-            return y
-
+    # Create wrapper that handles batching for l4casadi
     wrapper = NetworkWrapper(network)
     wrapper.eval()
 
