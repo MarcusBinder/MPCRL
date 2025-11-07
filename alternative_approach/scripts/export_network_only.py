@@ -103,8 +103,13 @@ def export_l4casadi(network: torch.nn.Module, normalization: dict, output_path: 
             # Forward through network
             y = self.network(x)
 
-            # Return scalar
-            return y.squeeze()
+            # Ensure output is 2D: (1, 1) as required by l4casadi
+            if y.dim() == 1:
+                y = y.unsqueeze(-1)  # (batch,) -> (batch, 1)
+            if y.dim() == 0:
+                y = y.reshape(1, 1)  # scalar -> (1, 1)
+
+            return y
 
     wrapper = NetworkWrapper(network)
     wrapper.eval()
