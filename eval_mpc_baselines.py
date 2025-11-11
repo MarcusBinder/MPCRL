@@ -63,7 +63,7 @@ def test_fun_baseline(arg):
     # Get the farm layout
     x_pos, y_pos = generate_square_grid(turbine=turbine,
                                         nx=3, ny=1,
-                                        xDist=5, yDist=5)
+                                        xDist=6, yDist=6)
 
     if TI_type == "None":
         print("No TI measurements will be used.")
@@ -77,7 +77,7 @@ def test_fun_baseline(arg):
         x_pos=x_pos,
         y_pos=y_pos,
         ws_scaling_min=6, ws_scaling_max=15,
-        wd_scaling_min=250, wd_scaling_max=290,
+        wd_scaling_min=270-30, wd_scaling_max=270+30,
         ti_scaling_min=0.01, ti_scaling_max=0.15,
         TurbBox=turbbox_path,
         config=make_config_with_TI(),
@@ -96,7 +96,7 @@ def test_fun_baseline(arg):
         model = SimpleEstimatorMPCAgent(env)
     else:
         raise ValueError(f"Unknown agent type: {agent_type}")
-
+    print(f"Using the following wind conditions: wd={wd}, ws={ws}, ti={ti}")
     # Use the custom MPC evaluation function
     ds = eval_single_fast_mpc(
         env,
@@ -136,7 +136,7 @@ class EvalArgs:
     """smoothing window for front_turbine agent"""
     # Environment parameters (defaults match training)
     dt_sim: int = 10
-    dt_env: int = 30
+    dt_env: int = 60
     yaw_step: float = 0.3
     turbtype: str = "DTU10MW"
     TI_type: str = "Random"
@@ -175,8 +175,8 @@ if __name__ == '__main__':
     args = args.eval_args
 
     # Set default evaluation conditions
-    wdirs = args.wdirs if args.wdirs is not None else [265, 270, 275]
-    wss = args.wss if args.wss is not None else [9]
+    wdirs = args.wdirs if args.wdirs is not None else [270] #[265, 270, 275]
+    wss = args.wss if args.wss is not None else [10]
     TIs = args.TIs if args.TIs is not None else [0.05]
     BOXES = args.boxes if args.boxes is not None else ["Random"]
     deterministic_modes = [args.deterministic]

@@ -21,8 +21,8 @@ class MPCenv(WindFarmEnv):
         
         obs, info = super().reset(seed=seed, options=options)
 
-        self.USE_VARIABLE_HORIZON = True   # Use variable prediction horizon (paper's approach)
-        self.USE_TIME_SHIFTED = True       # Use time-shifted cost function (paper's best)
+        self.USE_VARIABLE_HORIZON = False   # Use variable prediction horizon (paper's approach)
+        self.USE_TIME_SHIFTED = False       # Use time-shifted cost function (paper's best)
         self.APPLY_YAW_PENALTY = True      # Use Equation 5 penalty for large yaw angles
 
         self.mpc_model = WindFarmModel(self.x_pos, self.y_pos, 
