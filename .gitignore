@@ -1,3 +1,7 @@
+_manifest*
+*_OK
+events*
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
