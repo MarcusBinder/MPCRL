@@ -97,7 +97,7 @@ dmypy.json
 # Training outputs
 runs/
 wandb/
-*.pt
+# *.pt
 *.pth
 *.ckpt
 checkpoints/
